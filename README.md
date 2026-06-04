@@ -1,2 +1,3 @@
-# Multimodal-AI-E-commerce-Intelligence-Automation-Agent
-Multimodal AI E-commerce Intelligence &amp; Automation Agent helps sellers automate product listings, SEO content, customer support, ads, and product research using vision-language models, RAG, and agentic AI workflows
+# Multimodal AI E-commerce Intelligence & Automation Agent
+
+An AI SaaS system for e-commerce sellers that generates product listings, supports semantic product search, and automates seller workflows using multimodal AI, RAG, and agentic AI.
