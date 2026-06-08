@@ -1,12 +1,13 @@
 from fastapi import FastAPI
 
 from app.api.v1.router import api_router
+from app.api.v1 import vision
 from app.services.qdrant_service import create_collection_if_not_exists
 
 
 app = FastAPI(
     title="E-commerce AI Automation Backend",
-    version="0.1.0"
+    version="0.1.0",
 )
 
 
@@ -26,3 +27,9 @@ def health_check():
 
 
 app.include_router(api_router, prefix="/api/v1")
+
+app.include_router(
+    vision.router,
+    prefix="/api/v1/vision",
+    tags=["Vision"],
+)
