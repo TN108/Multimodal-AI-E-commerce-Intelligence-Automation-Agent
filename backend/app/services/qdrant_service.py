@@ -21,6 +21,8 @@ def create_collection_if_not_exists():
 
 
 def insert_product(product_id: str, vector: list, payload: dict):
+    create_collection_if_not_exists()
+
     point = PointStruct(
         id=product_id,
         vector=vector,
@@ -34,6 +36,8 @@ def insert_product(product_id: str, vector: list, payload: dict):
 
 
 def get_all_products(limit: int = 50):
+    create_collection_if_not_exists()
+
     points, _ = client.scroll(
         collection_name=COLLECTION_NAME,
         limit=limit,
@@ -45,6 +49,8 @@ def get_all_products(limit: int = 50):
 
 
 def search_products(vector: list, limit: int = 5):
+    create_collection_if_not_exists()
+
     response = client.query_points(
         collection_name=COLLECTION_NAME,
         query=vector,

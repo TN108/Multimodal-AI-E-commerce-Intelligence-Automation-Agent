@@ -1,10 +1,18 @@
-import hashlib
-import random
-from app.config import VECTOR_SIZE
+from sentence_transformers import SentenceTransformer
+
+
+EMBEDDING_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
+
+model = SentenceTransformer(EMBEDDING_MODEL_NAME)
 
 
 def generate_embedding(text: str):
-    seed = int(hashlib.md5(text.encode()).hexdigest(), 16) % (10 ** 8)
-    rng = random.Random(seed)
+    if not text:
+        text = ""
 
-    return [rng.random() for _ in range(VECTOR_SIZE)]
+    embedding = model.encode(
+        text,
+        normalize_embeddings=True
+    )
+
+    return embedding.tolist()
