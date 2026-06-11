@@ -1,17 +1,49 @@
 import base64
 import json
 import re
+from io import BytesIO
 
 import httpx
+from PIL import Image, ImageOps, UnidentifiedImageError
 
 
 OLLAMA_URL = "http://localhost:11434/api/generate"
 VLM_MODEL = "qwen2.5vl:3b"
 
 
+def compress_image_for_vlm(
+    image_bytes: bytes,
+    max_side: int = 512,
+    quality: int = 80,
+) -> bytes:
+    """
+    Resize and compress image before sending it to the VLM.
+
+    This reduces CPU inference time because local VLMs are slow on large images.
+    """
+    try:
+        image = Image.open(BytesIO(image_bytes))
+        image = ImageOps.exif_transpose(image)
+        image = image.convert("RGB")
+
+        image.thumbnail((max_side, max_side))
+
+        buffer = BytesIO()
+        image.save(
+            buffer,
+            format="JPEG",
+            quality=quality,
+            optimize=True,
+        )
+
+        return buffer.getvalue()
+
+    except UnidentifiedImageError:
+        raise ValueError("Invalid image file. Could not read uploaded image.")
+
+
 def extract_json_from_text(text: str) -> dict:
     raw_text = text.strip()
-
     cleaned_text = raw_text
 
     cleaned_text = re.sub(r"^```json", "", cleaned_text, flags=re.IGNORECASE).strip()
@@ -43,19 +75,32 @@ def extract_json_from_text(text: str) -> dict:
 
 
 async def analyze_product_image(image_bytes: bytes) -> dict:
-    image_base64 = base64.b64encode(image_bytes).decode("utf-8")
+    try:
+        compressed_image_bytes = compress_image_for_vlm(
+            image_bytes=image_bytes,
+            max_side=512,
+            quality=80,
+        )
+    except ValueError as error:
+        return {
+            "error": str(error),
+        }
+
+    image_base64 = base64.b64encode(compressed_image_bytes).decode("utf-8")
 
     prompt = """
-You are an e-commerce product image analysis assistant.
+Analyze the main clothing product in this image for an e-commerce catalog.
 
-Analyze the uploaded product image.
+Ignore the person, face, pose, phone, chair, room, furniture, background, and lighting.
+Only describe the sellable clothing item.
+Do not describe the full scene.
+Do not include non-product objects in visible_features or search_tags.
 
 Return ONLY raw valid JSON.
 Do not use markdown.
-Do not use ```json.
 Do not add explanation before or after the JSON.
 
-Return this exact JSON structure:
+Use this exact JSON structure:
 {
   "product_type": "",
   "category": "",
@@ -74,9 +119,22 @@ Return this exact JSON structure:
         "prompt": prompt,
         "images": [image_base64],
         "stream": False,
+        "keep_alive": "30m",
+        "options": {
+            "temperature": 0,
+            "num_predict": 250,
+            "num_ctx": 2048,
+        },
     }
 
-    async with httpx.AsyncClient(timeout=300) as client:
+    timeout = httpx.Timeout(
+        connect=10,
+        read=300,
+        write=30,
+        pool=10,
+    )
+
+    async with httpx.AsyncClient(timeout=timeout) as client:
         response = await client.post(OLLAMA_URL, json=payload)
         response.raise_for_status()
 
