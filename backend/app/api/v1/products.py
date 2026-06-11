@@ -4,12 +4,52 @@ from app.models.product import Product, ProductSearch
 from app.services.product_service import (
     create_product_service,
     get_products_service,
-    search_products_service
+    search_products_service,
 )
 from app.services.vlm_service import analyze_product_image
 
 
 router = APIRouter()
+
+
+def safe_join(value) -> str:
+    """
+    Safely converts strings, lists, dictionaries, and mixed VLM outputs into clean text.
+
+    This prevents crashes when the VLM returns:
+    ["Collar", "Buttons"]
+
+    or:
+    [{"feature": "Collar"}, {"feature": "Buttons"}]
+    """
+    if value is None:
+        return ""
+
+    if isinstance(value, list):
+        cleaned_items = []
+
+        for item in value:
+            if item is None:
+                continue
+
+            if isinstance(item, str):
+                cleaned_items.append(item)
+
+            elif isinstance(item, dict):
+                if len(item) == 1:
+                    cleaned_items.append(str(next(iter(item.values()))))
+                else:
+                    cleaned_items.append(" ".join(str(v) for v in item.values()))
+
+            else:
+                cleaned_items.append(str(item))
+
+        return ", ".join(cleaned_items)
+
+    if isinstance(value, dict):
+        return ", ".join(str(v) for v in value.values())
+
+    return str(value)
 
 
 @router.get("/")
@@ -26,7 +66,7 @@ def create_product(product: Product):
 def search_products(product_search: ProductSearch):
     return search_products_service(
         query=product_search.query,
-        limit=product_search.limit
+        limit=product_search.limit,
     )
 
 
@@ -56,19 +96,20 @@ async def analyze_and_save_product(file: UploadFile = File(...)):
             detail=analysis,
         )
 
-    product_type = analysis.get("product_type", "Unknown Product")
-    category = analysis.get("category", "Uncategorized")
-    gender = analysis.get("gender", "")
+    product_type = str(analysis.get("product_type", "Unknown Product"))
+    category = str(analysis.get("category", "Uncategorized"))
+    gender = str(analysis.get("gender", ""))
+    style = str(analysis.get("style", ""))
+    material_guess = str(analysis.get("material_guess", ""))
+    short_description = str(analysis.get("short_description", ""))
+
     colors = analysis.get("colors", [])
-    style = analysis.get("style", "")
-    material_guess = analysis.get("material_guess", "")
     visible_features = analysis.get("visible_features", [])
     search_tags = analysis.get("search_tags", [])
-    short_description = analysis.get("short_description", "")
 
-    color_text = ", ".join(colors) if isinstance(colors, list) else str(colors)
-    feature_text = ", ".join(visible_features) if isinstance(visible_features, list) else str(visible_features)
-    tag_text = ", ".join(search_tags) if isinstance(search_tags, list) else str(search_tags)
+    color_text = safe_join(colors)
+    feature_text = safe_join(visible_features)
+    tag_text = safe_join(search_tags)
 
     name_parts = [gender, color_text, style, product_type]
     product_name = " ".join([part for part in name_parts if part]).strip()
