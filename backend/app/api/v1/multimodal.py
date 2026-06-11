@@ -10,6 +10,54 @@ from app.services.qdrant_service import search_products
 router = APIRouter(prefix="/multimodal", tags=["Multimodal Search"])
 
 
+def safe_text(value) -> str:
+    """
+    Converts VLM output into clean text.
+
+    Handles:
+    - strings
+    - numbers
+    - lists
+    - dictionaries
+    - nested lists/dictionaries
+
+    Example:
+    {"feature": "Shape", "description": "Round and saddle-like"}
+    becomes:
+    "Shape Round and saddle-like"
+    """
+    if value is None:
+        return ""
+
+    if isinstance(value, str):
+        return value.strip()
+
+    if isinstance(value, (int, float, bool)):
+        return str(value)
+
+    if isinstance(value, list):
+        cleaned_items = []
+
+        for item in value:
+            item_text = safe_text(item)
+            if item_text:
+                cleaned_items.append(item_text)
+
+        return " ".join(cleaned_items).strip()
+
+    if isinstance(value, dict):
+        cleaned_items = []
+
+        for dict_value in value.values():
+            item_text = safe_text(dict_value)
+            if item_text:
+                cleaned_items.append(item_text)
+
+        return " ".join(cleaned_items).strip()
+
+    return str(value).strip()
+
+
 def get_result_score(result) -> float:
     """
     Works for both Qdrant ScoredPoint objects and dictionary results.
@@ -32,8 +80,7 @@ def get_result_payload(result) -> dict:
 
 def filter_results_by_score(results, min_score: float):
     """
-    Remove weak / irrelevant vector search matches using only similarity score.
-    Used mainly for text search.
+    Remove weak / irrelevant vector search matches using similarity score.
     """
     return [
         result for result in results
@@ -48,7 +95,6 @@ def filter_results_by_score_and_category(
 ):
     """
     Remove weak matches and optionally keep only products from the detected category.
-    Used mainly for image search because VLM gives structured category info.
     """
     filtered = []
 
@@ -61,7 +107,7 @@ def filter_results_by_score_and_category(
 
         if category:
             result_category = str(payload.get("category", "")).strip().lower()
-            expected_category = category.strip().lower()
+            expected_category = str(category).strip().lower()
 
             if result_category != expected_category:
                 continue
@@ -90,17 +136,17 @@ def get_analysis_from_vlm_result(vlm_result) -> dict:
 
 def build_search_text_from_vlm_result(vlm_result) -> str:
     """
-    Converts VLM output into searchable text for embedding generation.
+    Converts VLM output into clean searchable text for embedding generation.
+
+    This prevents raw dictionaries from appearing in search_text.
     """
 
     analysis = get_analysis_from_vlm_result(vlm_result)
 
     if not analysis:
-        return str(vlm_result)
+        return safe_text(vlm_result)
 
-    parts = []
-
-    simple_fields = [
+    fields = [
         "name",
         "product_type",
         "category",
@@ -109,29 +155,22 @@ def build_search_text_from_vlm_result(vlm_result) -> str:
         "material_guess",
         "description",
         "short_description",
-    ]
-
-    for field in simple_fields:
-        value = analysis.get(field)
-        if value:
-            parts.append(str(value))
-
-    list_fields = [
         "colors",
         "visible_features",
         "search_tags",
         "tags",
     ]
 
-    for field in list_fields:
+    parts = []
+
+    for field in fields:
         value = analysis.get(field)
+        text = safe_text(value)
 
-        if isinstance(value, list):
-            parts.extend([str(item) for item in value])
-        elif value:
-            parts.append(str(value))
+        if text:
+            parts.append(text)
 
-    return " ".join(parts)
+    return " ".join(parts).strip()
 
 
 async def run_image_analysis(file: UploadFile):
@@ -140,15 +179,38 @@ async def run_image_analysis(file: UploadFile):
     Supports both sync and async versions of analyze_product_image().
     """
 
+    allowed_types = ["image/jpeg", "image/png", "image/webp"]
+
+    if file.content_type not in allowed_types:
+        raise HTTPException(
+            status_code=400,
+            detail="Only JPEG, PNG, and WEBP images are allowed",
+        )
+
     image_bytes = await file.read()
 
     if not image_bytes:
-        raise HTTPException(status_code=400, detail="Uploaded image file is empty")
+        raise HTTPException(
+            status_code=400,
+            detail="Uploaded image file is empty",
+        )
 
     result = analyze_product_image(image_bytes)
 
     if inspect.isawaitable(result):
         result = await result
+
+    if not isinstance(result, dict):
+        raise HTTPException(
+            status_code=500,
+            detail="VLM did not return a valid dictionary response",
+        )
+
+    if "error" in result:
+        raise HTTPException(
+            status_code=500,
+            detail=result,
+        )
 
     return result
 
@@ -184,7 +246,7 @@ async def search_by_image(
 
     search_text = build_search_text_from_vlm_result(vlm_result)
 
-    if not search_text.strip():
+    if not search_text:
         raise HTTPException(
             status_code=500,
             detail="VLM analysis did not produce searchable text",
