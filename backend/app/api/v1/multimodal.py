@@ -10,6 +10,57 @@ from app.services.qdrant_service import search_products
 router = APIRouter(prefix="/multimodal", tags=["Multimodal Search"])
 
 
+CATEGORY_ALIASES = {
+    # Footwear
+    "footwear": "footwear",
+    "shoe": "footwear",
+    "shoes": "footwear",
+    "sneaker": "footwear",
+    "sneakers": "footwear",
+    "trainer": "footwear",
+    "trainers": "footwear",
+    "boot": "footwear",
+    "boots": "footwear",
+    "heel": "footwear",
+    "heels": "footwear",
+    "sandal": "footwear",
+    "sandals": "footwear",
+
+    # Accessories
+    "accessory": "accessories",
+    "accessories": "accessories",
+    "bag": "accessories",
+    "bags": "accessories",
+    "handbag": "accessories",
+    "handbags": "accessories",
+    "purse": "accessories",
+    "wallet": "accessories",
+    "belt": "accessories",
+    "watch": "accessories",
+    "sunglasses": "accessories",
+
+    # Clothing
+    "clothing": "clothing",
+    "apparel": "clothing",
+    "dress": "clothing",
+    "dresses": "clothing",
+    "shirt": "clothing",
+    "shirts": "clothing",
+    "tshirt": "clothing",
+    "t-shirt": "clothing",
+    "t-shirts": "clothing",
+    "jacket": "clothing",
+    "jackets": "clothing",
+    "coat": "clothing",
+    "coats": "clothing",
+    "pants": "clothing",
+    "trousers": "clothing",
+    "jeans": "clothing",
+    "skirt": "clothing",
+    "skirts": "clothing",
+}
+
+
 def safe_text(value) -> str:
     """
     Converts VLM output into clean text.
@@ -58,6 +109,24 @@ def safe_text(value) -> str:
     return str(value).strip()
 
 
+def normalize_category(value) -> str:
+    """
+    Converts different category names into one standard category.
+
+    Examples:
+    "Sneakers" -> "footwear"
+    "Shoes" -> "footwear"
+    "Handbag" -> "accessories"
+    "Dress" -> "clothing"
+    """
+    text = safe_text(value).strip().lower()
+
+    if not text:
+        return ""
+
+    return CATEGORY_ALIASES.get(text, text)
+
+
 def get_result_score(result) -> float:
     """
     Works for both Qdrant ScoredPoint objects and dictionary results.
@@ -95,8 +164,19 @@ def filter_results_by_score_and_category(
 ):
     """
     Remove weak matches and optionally keep only products from the detected category.
+
+    Uses category normalization.
+
+    Example:
+    VLM category: "Sneakers"
+    Product category in Qdrant: "Footwear"
+
+    Both become:
+    "footwear"
     """
     filtered = []
+
+    expected_category = normalize_category(category)
 
     for result in results:
         score = get_result_score(result)
@@ -105,9 +185,8 @@ def filter_results_by_score_and_category(
         if score < min_score:
             continue
 
-        if category:
-            result_category = str(payload.get("category", "")).strip().lower()
-            expected_category = str(category).strip().lower()
+        if expected_category:
+            result_category = normalize_category(payload.get("category", ""))
 
             if result_category != expected_category:
                 continue
@@ -140,7 +219,6 @@ def build_search_text_from_vlm_result(vlm_result) -> str:
 
     This prevents raw dictionaries from appearing in search_text.
     """
-
     analysis = get_analysis_from_vlm_result(vlm_result)
 
     if not analysis:
@@ -148,7 +226,9 @@ def build_search_text_from_vlm_result(vlm_result) -> str:
 
     fields = [
         "name",
+        "brand",
         "product_type",
+        "type",
         "category",
         "gender",
         "style",
@@ -178,7 +258,6 @@ async def run_image_analysis(file: UploadFile):
     Reads uploaded image file and sends image bytes to the VLM service.
     Supports both sync and async versions of analyze_product_image().
     """
-
     allowed_types = ["image/jpeg", "image/png", "image/webp"]
 
     if file.content_type not in allowed_types:
@@ -218,8 +297,8 @@ async def run_image_analysis(file: UploadFile):
 @router.get("/search/text")
 async def search_by_text(
     query: str = Query(..., description="Customer product search query"),
-    limit: int = Query(5, description="Number of similar products to return"),
-    min_score: float = Query(0.30, description="Minimum similarity score"),
+    limit: int = Query(5, ge=1, le=50, description="Number of similar products to return"),
+    min_score: float = Query(0.30, ge=0, le=1, description="Minimum similarity score"),
 ):
     query_embedding = generate_embedding(query)
 
@@ -239,8 +318,8 @@ async def search_by_text(
 @router.post("/search/image")
 async def search_by_image(
     file: UploadFile = File(...),
-    limit: int = Query(5, description="Number of similar products to return"),
-    min_score: float = Query(0.30, description="Minimum similarity score"),
+    limit: int = Query(5, ge=1, le=50, description="Number of similar products to return"),
+    min_score: float = Query(0.30, ge=0, le=1, description="Minimum similarity score"),
 ):
     vlm_result = await run_image_analysis(file)
 
@@ -254,10 +333,19 @@ async def search_by_image(
 
     query_embedding = generate_embedding(search_text)
 
-    results = search_products(query_embedding, limit)
+    search_limit = limit * 3
+
+    results = search_products(query_embedding, search_limit)
 
     analysis = get_analysis_from_vlm_result(vlm_result)
-    detected_category = analysis.get("category")
+
+    detected_category = (
+        analysis.get("category")
+        or analysis.get("product_type")
+        or analysis.get("type")
+    )
+
+    normalized_detected_category = normalize_category(detected_category)
 
     filtered_results = filter_results_by_score_and_category(
         results=results,
@@ -265,11 +353,14 @@ async def search_by_image(
         category=detected_category,
     )
 
+    filtered_results = filtered_results[:limit]
+
     return {
         "search_type": "image",
         "vlm_analysis": vlm_result,
         "search_text": search_text,
         "detected_category": detected_category,
+        "normalized_detected_category": normalized_detected_category,
         "min_score": min_score,
         "results": filtered_results,
         "message": "Products found" if filtered_results else "No relevant products found",
