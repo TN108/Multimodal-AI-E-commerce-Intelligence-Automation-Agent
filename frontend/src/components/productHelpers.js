@@ -5,17 +5,7 @@ import {
   analyzeAndSaveProduct,
 } from "./api/multimodalApi";
 
-import GlassCard, { Field } from "./components/GlassCard";
-import ProductAnalysisCard from "./components/ProductAnalysisCard";
-import ProductCard from "./components/ProductCard";
-import RawJsonViewer from "./components/RawJsonViewer";
-
-import {
-  MIN_SCORE,
-  filterStrongResults,
-  getColors,
-  getSearchTags,
-} from "./utils/productHelpers";
+const MIN_SCORE = 0.5;
 
 const HERO_SLIDES = [
   {
@@ -40,6 +30,279 @@ const HERO_SLIDES = [
       "https://images.unsplash.com/photo-1441986300917-64674bd600d8?auto=format&fit=crop&w=1600&q=80",
   },
 ];
+
+function GlassCard({ children, className = "" }) {
+  return (
+    <div
+      className={`rounded-[2rem] border border-white/35 bg-white/20 p-6 shadow-[0_28px_90px_rgba(15,23,42,0.18)] ring-1 ring-white/30 backdrop-blur-3xl transition duration-300 ${className}`}
+    >
+      {children}
+    </div>
+  );
+}
+
+function Field({ label, value }) {
+  return (
+    <div className="rounded-2xl border border-white/35 bg-white/25 px-4 py-3 shadow-sm ring-1 ring-white/25 backdrop-blur-2xl">
+      <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-slate-500">
+        {label}
+      </p>
+
+      <p className="mt-1 text-sm font-semibold text-slate-900">
+        {value || "N/A"}
+      </p>
+    </div>
+  );
+}
+
+function RawJsonViewer({ title, data }) {
+  if (!data) return null;
+
+  return (
+    <details className="mt-5">
+      <summary className="cursor-pointer text-sm font-bold text-slate-600 transition hover:text-slate-950">
+        {title}
+      </summary>
+
+      <pre className="mt-3 max-h-96 overflow-x-auto rounded-2xl border border-white/20 bg-slate-950/90 p-4 text-xs leading-5 text-emerald-200 shadow-inner backdrop-blur-2xl">
+        {JSON.stringify(data, null, 2)}
+      </pre>
+    </details>
+  );
+}
+
+function getResultsArray(data) {
+  return data?.results || data?.matches || data?.products || [];
+}
+
+function getPayload(product) {
+  return product?.payload || product || {};
+}
+
+function getAnalysis(product) {
+  const payload = getPayload(product);
+  return payload?.vlm_analysis || product?.vlm_analysis || {};
+}
+
+function getProductName(product) {
+  const payload = getPayload(product);
+  const analysis = getAnalysis(product);
+
+  return (
+    product?.name ||
+    payload?.name ||
+    payload?.product_name ||
+    payload?.title ||
+    analysis?.product_type ||
+    analysis?.style ||
+    "Unnamed Product"
+  );
+}
+
+function getProductCategory(product) {
+  const payload = getPayload(product);
+  const analysis = getAnalysis(product);
+
+  return (
+    product?.category ||
+    payload?.category ||
+    payload?.product_type ||
+    analysis?.category ||
+    analysis?.product_type ||
+    "Unknown Category"
+  );
+}
+
+function getProductDescription(product) {
+  const payload = getPayload(product);
+  const analysis = getAnalysis(product);
+
+  return (
+    product?.description ||
+    payload?.description ||
+    payload?.short_description ||
+    analysis?.short_description ||
+    payload?.search_text ||
+    "No description available."
+  );
+}
+
+function getProductScore(product) {
+  if (product?.score !== undefined) return Number(product.score).toFixed(3);
+
+  if (product?.similarity !== undefined) {
+    return Number(product.similarity).toFixed(3);
+  }
+
+  return "N/A";
+}
+
+function getColors(analysis) {
+  if (Array.isArray(analysis?.colors)) {
+    return analysis.colors.join(", ");
+  }
+
+  return "N/A";
+}
+
+function getSearchTags(analysis) {
+  if (Array.isArray(analysis?.search_tags)) {
+    return analysis.search_tags.join(", ");
+  }
+
+  return "N/A";
+}
+
+function normalizeText(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function getDuplicateKey(product) {
+  const payload = getPayload(product);
+  const analysis = getAnalysis(product);
+
+  const name = getProductName(product);
+  const category = getProductCategory(product);
+  const productType = analysis?.product_type || payload?.product_type || "";
+  const style = analysis?.style || "";
+  const colors = Array.isArray(analysis?.colors)
+    ? analysis.colors.join(" ")
+    : "";
+
+  return normalizeText(`${name} ${category} ${productType} ${style} ${colors}`);
+}
+
+function removeDuplicateProducts(products) {
+  const seen = new Set();
+
+  return products.filter((product) => {
+    const key = getDuplicateKey(product);
+
+    if (!key) return true;
+
+    if (seen.has(key)) {
+      return false;
+    }
+
+    seen.add(key);
+    return true;
+  });
+}
+
+function filterStrongResults(data) {
+  const strongResults = getResultsArray(data).filter((product) => {
+    const score = product?.score ?? product?.similarity ?? 0;
+    return score >= MIN_SCORE;
+  });
+
+  return removeDuplicateProducts(strongResults);
+}
+
+function ProductAnalysisCard({ title, analysis }) {
+  if (!analysis) return null;
+
+  return (
+    <GlassCard className="mb-8">
+      <div className="mb-5 flex flex-col justify-between gap-4 md:flex-row md:items-center">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.28em] text-pink-500">
+            Product Intelligence
+          </p>
+
+          <h2 className="mt-2 text-2xl font-black text-slate-950">{title}</h2>
+        </div>
+
+        <span className="rounded-full border border-emerald-200/70 bg-emerald-100/50 px-4 py-2 text-xs font-black uppercase tracking-wide text-emerald-800 shadow-sm ring-1 ring-white/30 backdrop-blur-xl">
+          Analysis Ready
+        </span>
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+        <Field label="Product Type" value={analysis.product_type} />
+        <Field label="Category" value={analysis.category} />
+        <Field label="Audience" value={analysis.gender} />
+        <Field label="Style" value={analysis.style} />
+        <Field label="Material" value={analysis.material_guess} />
+        <Field label="Colors" value={getColors(analysis)} />
+      </div>
+
+      <div className="mt-4 rounded-2xl border border-violet-200/50 bg-violet-100/35 p-4 ring-1 ring-white/25 backdrop-blur-2xl">
+        <p className="text-xs font-bold uppercase tracking-[0.22em] text-violet-600">
+          Product Keywords
+        </p>
+
+        <p className="mt-2 text-sm leading-6 text-slate-800">
+          {getSearchTags(analysis)}
+        </p>
+      </div>
+
+      <div className="mt-4 rounded-2xl border border-sky-200/50 bg-sky-100/35 p-4 ring-1 ring-white/25 backdrop-blur-2xl">
+        <p className="text-xs font-bold uppercase tracking-[0.22em] text-sky-600">
+          Product Description
+        </p>
+
+        <p className="mt-2 text-sm leading-6 text-slate-800">
+          {analysis.short_description || "N/A"}
+        </p>
+      </div>
+
+      <RawJsonViewer title="View technical response" data={analysis} />
+    </GlassCard>
+  );
+}
+
+function ProductCard({ product }) {
+  const analysis = getAnalysis(product);
+
+  return (
+    <div className="group rounded-[1.75rem] border border-white/35 bg-white/20 p-5 shadow-[0_24px_80px_rgba(15,23,42,0.18)] ring-1 ring-white/30 backdrop-blur-3xl transition duration-300 hover:-translate-y-1 hover:border-white/50 hover:bg-white/30 hover:shadow-[0_35px_110px_rgba(15,23,42,0.22)]">
+      <div className="mb-4 flex items-start justify-between gap-4">
+        <div>
+          <h3 className="text-lg font-black leading-snug text-slate-950">
+            {getProductName(product)}
+          </h3>
+
+          <p className="mt-1 text-sm font-semibold text-slate-600">
+            {getProductCategory(product)}
+          </p>
+        </div>
+
+        <span className="shrink-0 rounded-full border border-emerald-200/70 bg-emerald-100/55 px-3 py-1 text-xs font-black text-emerald-800 shadow-sm ring-1 ring-white/40 backdrop-blur-xl">
+          {getProductScore(product)}
+        </span>
+      </div>
+
+      <p className="text-sm leading-6 text-slate-800">
+        {getProductDescription(product)}
+      </p>
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        {analysis?.colors && (
+          <span className="rounded-full border border-pink-200/70 bg-pink-100/45 px-3 py-1 text-xs font-bold text-pink-700 ring-1 ring-white/30 backdrop-blur-xl">
+            {getColors(analysis)}
+          </span>
+        )}
+
+        {analysis?.style && (
+          <span className="rounded-full border border-violet-200/70 bg-violet-100/45 px-3 py-1 text-xs font-bold text-violet-700 ring-1 ring-white/30 backdrop-blur-xl">
+            {analysis.style}
+          </span>
+        )}
+
+        {analysis?.material_guess && (
+          <span className="rounded-full border border-sky-200/70 bg-sky-100/45 px-3 py-1 text-xs font-bold text-sky-700 ring-1 ring-white/30 backdrop-blur-xl">
+            {analysis.material_guess}
+          </span>
+        )}
+      </div>
+
+      <RawJsonViewer title="View technical result" data={product} />
+    </div>
+  );
+}
 
 function App() {
   const [query, setQuery] = useState("");
