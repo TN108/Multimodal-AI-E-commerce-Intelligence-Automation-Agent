@@ -3,18 +3,21 @@ import {
   searchByText,
   searchByImage,
   analyzeAndSaveProduct,
+  getProducts,
 } from "./api/multimodalApi";
 
 import GlassCard, { Field } from "./components/GlassCard";
 import ProductAnalysisCard from "./components/ProductAnalysisCard";
 import ProductCard from "./components/ProductCard";
 import RawJsonViewer from "./components/RawJsonViewer";
+import CatalogSection from "./components/CatalogSection";
 
 import {
   MIN_SCORE,
   filterStrongResults,
   getColors,
   getSearchTags,
+  getResultsArray,
 } from "./utils/productHelpers";
 
 const HERO_SLIDES = [
@@ -41,7 +44,33 @@ const HERO_SLIDES = [
   },
 ];
 
+function ActionButton({ title, description, active, onClick, accent }) {
+  const activeClass =
+    accent === "emerald"
+      ? "border-emerald-300/70 bg-emerald-100/55 text-emerald-900 shadow-emerald-300/30"
+      : accent === "indigo"
+      ? "border-indigo-300/70 bg-indigo-100/55 text-indigo-900 shadow-indigo-300/30"
+      : "border-pink-300/70 bg-pink-100/55 text-pink-900 shadow-pink-300/30";
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-[1.75rem] border p-5 text-left shadow-lg ring-1 ring-white/30 backdrop-blur-2xl transition duration-300 hover:-translate-y-1 hover:bg-white/35 ${
+        active
+          ? activeClass
+          : "border-white/35 bg-white/20 text-slate-800 shadow-slate-300/20"
+      }`}
+    >
+      <p className="text-lg font-black">{title}</p>
+      <p className="mt-2 text-sm leading-6 opacity-80">{description}</p>
+    </button>
+  );
+}
+
 function App() {
+  const [activeSection, setActiveSection] = useState("add");
+
   const [query, setQuery] = useState("");
 
   const [selectedFile, setSelectedFile] = useState(null);
@@ -54,11 +83,16 @@ function App() {
   const [results, setResults] = useState([]);
   const [vlmAnalysis, setVlmAnalysis] = useState(null);
 
+  const [catalogProducts, setCatalogProducts] = useState([]);
+  const [catalogLoading, setCatalogLoading] = useState(false);
+
   const [searchLoading, setSearchLoading] = useState(false);
   const [saveLoading, setSaveLoading] = useState(false);
 
   const [error, setError] = useState("");
   const [currentSlide, setCurrentSlide] = useState(0);
+
+  const activeSlide = HERO_SLIDES[currentSlide];
 
   useEffect(() => {
     const intervalId = setInterval(() => {
@@ -70,7 +104,44 @@ function App() {
     return () => clearInterval(intervalId);
   }, []);
 
-  const activeSlide = HERO_SLIDES[currentSlide];
+  const handleRefreshCatalog = async () => {
+    setCatalogLoading(true);
+    setError("");
+
+    try {
+      const data = await getProducts();
+
+      console.log("Catalog products response:", data);
+
+      setCatalogProducts(getResultsArray(data));
+    } catch (error) {
+      console.error("Catalog refresh failed:", error);
+
+      const backendMessage =
+        error.response?.data?.detail ||
+        "Catalog refresh failed. Check backend, products API, and CORS.";
+
+      setError(backendMessage);
+    } finally {
+      setCatalogLoading(false);
+    }
+  };
+
+  const openAddSection = () => {
+    setActiveSection("add");
+    setError("");
+  };
+
+  const openCatalogSection = async () => {
+    setActiveSection("catalog");
+    setError("");
+    await handleRefreshCatalog();
+  };
+
+  const openSearchSection = () => {
+    setActiveSection("search");
+    setError("");
+  };
 
   const getSaveAnalysis = () => {
     return saveResult?.vlm_analysis || saveResult?.analysis || null;
@@ -127,6 +198,7 @@ function App() {
       return;
     }
 
+    setActiveSection("add");
     setSaveLoading(true);
     setError("");
     setSaveResult(null);
@@ -137,6 +209,7 @@ function App() {
       console.log("Analyze and save response:", data);
 
       setSaveResult(data);
+      await handleRefreshCatalog();
     } catch (error) {
       console.error("Analyze and save failed:", error);
 
@@ -156,6 +229,7 @@ function App() {
       return;
     }
 
+    setActiveSection("search");
     setSearchLoading(true);
     setError("");
     setVlmAnalysis(null);
@@ -186,6 +260,7 @@ function App() {
       return;
     }
 
+    setActiveSection("search");
     setSearchLoading(true);
     setError("");
     setVlmAnalysis(null);
@@ -325,288 +400,348 @@ function App() {
           </div>
         </section>
 
+        <GlassCard className="mb-8">
+          <div className="mb-5">
+            <p className="text-xs font-black uppercase tracking-[0.28em] text-slate-500">
+              Workspace
+            </p>
+
+            <h2 className="mt-2 text-3xl font-black text-slate-950">
+              Choose an action
+            </h2>
+
+            <p className="mt-2 text-sm leading-6 text-slate-700">
+              Open only the workflow you need. This keeps the dashboard clean
+              and focused.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <ActionButton
+              title="Add Product"
+              description="Upload a product image, analyze it, and save it to the catalog."
+              active={activeSection === "add"}
+              accent="emerald"
+              onClick={openAddSection}
+            />
+
+            <ActionButton
+              title="View Catalog"
+              description="Review saved products already available in your catalog."
+              active={activeSection === "catalog"}
+              accent="indigo"
+              onClick={openCatalogSection}
+            />
+
+            <ActionButton
+              title="Search Products"
+              description="Search the catalog using text or a reference image."
+              active={activeSection === "search"}
+              accent="pink"
+              onClick={openSearchSection}
+            />
+          </div>
+        </GlassCard>
+
         {error && (
           <div className="mb-8 rounded-3xl border border-rose-200/70 bg-rose-100/45 p-4 text-sm font-bold text-rose-800 shadow-sm ring-1 ring-white/30 backdrop-blur-2xl">
             {error}
           </div>
         )}
 
-        <GlassCard className="mb-8">
-          <div className="mb-6 flex flex-col justify-between gap-4 md:flex-row md:items-start">
-            <div>
-              <p className="text-xs font-black uppercase tracking-[0.28em] text-emerald-600">
-                Catalog Intake
-              </p>
+        {activeSection === "add" && (
+          <GlassCard className="mb-8">
+            <div className="mb-6 flex flex-col justify-between gap-4 md:flex-row md:items-start">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.28em] text-emerald-600">
+                  Catalog Intake
+                </p>
 
-              <h2 className="mt-2 text-3xl font-black text-slate-950">
-                Add Product
-              </h2>
+                <h2 className="mt-2 text-3xl font-black text-slate-950">
+                  Add Product
+                </h2>
 
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-700">
-                Upload a product image and convert it into an intelligent,
-                searchable catalog entry.
-              </p>
+                <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-700">
+                  Upload a product image and convert it into an intelligent,
+                  searchable catalog entry.
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-emerald-200/70 bg-emerald-100/45 px-4 py-3 text-sm font-bold text-emerald-800 ring-1 ring-white/30 backdrop-blur-xl">
+                Upload → Analyze → Save
+              </div>
             </div>
 
-            <div className="rounded-2xl border border-emerald-200/70 bg-emerald-100/45 px-4 py-3 text-sm font-bold text-emerald-800 ring-1 ring-white/30 backdrop-blur-xl">
-              Upload → Analyze → Save
-            </div>
-          </div>
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-[380px_1fr]">
+              <div className="rounded-[2rem] border border-dashed border-emerald-200/70 bg-emerald-100/25 p-5 ring-1 ring-white/25 backdrop-blur-2xl">
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleAddProductImageChange}
+                  className="w-full rounded-2xl border border-white/40 bg-white/30 px-4 py-3 text-sm text-slate-800 ring-1 ring-white/30 backdrop-blur-2xl file:mr-4 file:rounded-full file:border-0 file:bg-emerald-100/70 file:px-4 file:py-2 file:text-sm file:font-bold file:text-emerald-800"
+                />
 
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-[380px_1fr]">
-            <div className="rounded-[2rem] border border-dashed border-emerald-200/70 bg-emerald-100/25 p-5 ring-1 ring-white/25 backdrop-blur-2xl">
-              <input
-                type="file"
-                accept="image/*"
-                onChange={handleAddProductImageChange}
-                className="w-full rounded-2xl border border-white/40 bg-white/30 px-4 py-3 text-sm text-slate-800 ring-1 ring-white/30 backdrop-blur-2xl file:mr-4 file:rounded-full file:border-0 file:bg-emerald-100/70 file:px-4 file:py-2 file:text-sm file:font-bold file:text-emerald-800"
-              />
+                {addProductPreview ? (
+                  <div className="mt-5">
+                    <p className="mb-2 text-sm font-black text-slate-800">
+                      Product Preview
+                    </p>
 
-              {addProductPreview ? (
-                <div className="mt-5">
-                  <p className="mb-2 text-sm font-black text-slate-800">
-                    Product Preview
-                  </p>
-
-                  <img
-                    src={addProductPreview}
-                    alt="Product preview"
-                    className="h-72 w-full rounded-[1.75rem] border border-white/40 bg-white/20 object-contain shadow-inner ring-1 ring-white/30 backdrop-blur-2xl"
-                  />
-                </div>
-              ) : (
-                <div className="mt-5 flex h-72 items-center justify-center rounded-[1.75rem] border border-white/35 bg-white/20 text-center text-sm font-semibold text-slate-500 ring-1 ring-white/25 backdrop-blur-2xl">
-                  Product preview will appear here.
-                </div>
-              )}
-
-              <button
-                onClick={handleAnalyzeAndSaveProduct}
-                disabled={saveLoading}
-                className="mt-5 w-full rounded-2xl border border-emerald-300/50 bg-emerald-500/80 px-6 py-3 font-black text-white shadow-lg shadow-emerald-300/40 ring-1 ring-white/30 backdrop-blur-xl transition hover:bg-emerald-600/90 disabled:bg-emerald-200/60"
-              >
-                {saveLoading ? "Processing Product..." : "Analyze & Save"}
-              </button>
-            </div>
-
-            <div>
-              {saveLoading && (
-                <div className="rounded-3xl border border-amber-200/70 bg-amber-100/45 p-5 text-sm font-bold text-amber-800 ring-1 ring-white/30 backdrop-blur-2xl">
-                  Creating an intelligent catalog entry...
-                </div>
-              )}
-
-              {saveResult && (
-                <div className="space-y-5">
-                  <div className="rounded-3xl border border-emerald-200/70 bg-emerald-100/45 p-5 text-sm font-bold text-emerald-800 ring-1 ring-white/30 backdrop-blur-2xl">
-                    Product has been analyzed and saved successfully.
+                    <img
+                      src={addProductPreview}
+                      alt="Product preview"
+                      className="h-72 w-full rounded-[1.75rem] border border-white/40 bg-white/20 object-contain shadow-inner ring-1 ring-white/30 backdrop-blur-2xl"
+                    />
                   </div>
+                ) : (
+                  <div className="mt-5 flex h-72 items-center justify-center rounded-[1.75rem] border border-white/35 bg-white/20 text-center text-sm font-semibold text-slate-500 ring-1 ring-white/25 backdrop-blur-2xl">
+                    Product preview will appear here.
+                  </div>
+                )}
 
-                  {getSaveAnalysis() && (
-                    <div className="rounded-[1.75rem] border border-white/35 bg-white/20 p-5 shadow-sm ring-1 ring-white/30 backdrop-blur-2xl">
-                      <h3 className="text-xl font-black text-slate-950">
-                        Product Analysis
-                      </h3>
+                <button
+                  onClick={handleAnalyzeAndSaveProduct}
+                  disabled={saveLoading}
+                  className="mt-5 w-full rounded-2xl border border-emerald-300/50 bg-emerald-500/80 px-6 py-3 font-black text-white shadow-lg shadow-emerald-300/40 ring-1 ring-white/30 backdrop-blur-xl transition hover:bg-emerald-600/90 disabled:bg-emerald-200/60"
+                >
+                  {saveLoading ? "Processing Product..." : "Analyze & Save"}
+                </button>
+              </div>
 
-                      <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
-                        <Field
-                          label="Product Type"
-                          value={getSaveAnalysis()?.product_type}
-                        />
+              <div>
+                {saveLoading && (
+                  <div className="rounded-3xl border border-amber-200/70 bg-amber-100/45 p-5 text-sm font-bold text-amber-800 ring-1 ring-white/30 backdrop-blur-2xl">
+                    Creating an intelligent catalog entry...
+                  </div>
+                )}
 
-                        <Field
-                          label="Category"
-                          value={getSaveAnalysis()?.category}
-                        />
-
-                        <Field
-                          label="Audience"
-                          value={getSaveAnalysis()?.gender}
-                        />
-
-                        <Field
-                          label="Style"
-                          value={getSaveAnalysis()?.style}
-                        />
-
-                        <Field
-                          label="Material"
-                          value={getSaveAnalysis()?.material_guess}
-                        />
-
-                        <Field
-                          label="Colors"
-                          value={getColors(getSaveAnalysis())}
-                        />
-                      </div>
-
-                      <div className="mt-4 rounded-2xl border border-violet-200/50 bg-violet-100/35 p-4 text-sm text-slate-800 ring-1 ring-white/25 backdrop-blur-2xl">
-                        <strong>Product Keywords:</strong>{" "}
-                        {getSearchTags(getSaveAnalysis())}
-                      </div>
-
-                      <div className="mt-4 rounded-2xl border border-sky-200/50 bg-sky-100/35 p-4 text-sm leading-6 text-slate-800 ring-1 ring-white/25 backdrop-blur-2xl">
-                        <strong>Description:</strong>{" "}
-                        {getSaveAnalysis()?.short_description || "N/A"}
-                      </div>
+                {saveResult && (
+                  <div className="space-y-5">
+                    <div className="rounded-3xl border border-emerald-200/70 bg-emerald-100/45 p-5 text-sm font-bold text-emerald-800 ring-1 ring-white/30 backdrop-blur-2xl">
+                      Product has been analyzed and saved successfully.
                     </div>
-                  )}
 
-                  {saveResult.search_text && (
-                    <div className="rounded-[1.75rem] border border-sky-200/50 bg-sky-100/35 p-5 ring-1 ring-white/25 backdrop-blur-2xl">
-                      <h3 className="text-lg font-black text-slate-950">
-                        Searchable Catalog Summary
-                      </h3>
+                    {getSaveAnalysis() && (
+                      <div className="rounded-[1.75rem] border border-white/35 bg-white/20 p-5 shadow-sm ring-1 ring-white/30 backdrop-blur-2xl">
+                        <h3 className="text-xl font-black text-slate-950">
+                          Product Analysis
+                        </h3>
 
-                      <p className="mt-2 text-sm leading-6 text-slate-800">
-                        {saveResult.search_text}
+                        <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+                          <Field
+                            label="Product Type"
+                            value={getSaveAnalysis()?.product_type}
+                          />
+
+                          <Field
+                            label="Category"
+                            value={getSaveAnalysis()?.category}
+                          />
+
+                          <Field
+                            label="Audience"
+                            value={getSaveAnalysis()?.gender}
+                          />
+
+                          <Field
+                            label="Style"
+                            value={getSaveAnalysis()?.style}
+                          />
+
+                          <Field
+                            label="Material"
+                            value={getSaveAnalysis()?.material_guess}
+                          />
+
+                          <Field
+                            label="Colors"
+                            value={getColors(getSaveAnalysis())}
+                          />
+                        </div>
+
+                        <div className="mt-4 rounded-2xl border border-violet-200/50 bg-violet-100/35 p-4 text-sm text-slate-800 ring-1 ring-white/25 backdrop-blur-2xl">
+                          <strong>Product Keywords:</strong>{" "}
+                          {getSearchTags(getSaveAnalysis())}
+                        </div>
+
+                        <div className="mt-4 rounded-2xl border border-sky-200/50 bg-sky-100/35 p-4 text-sm leading-6 text-slate-800 ring-1 ring-white/25 backdrop-blur-2xl">
+                          <strong>Description:</strong>{" "}
+                          {getSaveAnalysis()?.short_description || "N/A"}
+                        </div>
+                      </div>
+                    )}
+
+                    {saveResult.search_text && (
+                      <div className="rounded-[1.75rem] border border-sky-200/50 bg-sky-100/35 p-5 ring-1 ring-white/25 backdrop-blur-2xl">
+                        <h3 className="text-lg font-black text-slate-950">
+                          Searchable Catalog Summary
+                        </h3>
+
+                        <p className="mt-2 text-sm leading-6 text-slate-800">
+                          {saveResult.search_text}
+                        </p>
+                      </div>
+                    )}
+
+                    <RawJsonViewer
+                      title="View technical save response"
+                      data={saveResult}
+                    />
+                  </div>
+                )}
+
+                {!saveLoading && !saveResult && (
+                  <div className="flex h-full min-h-72 items-center justify-center rounded-[1.75rem] border border-white/35 bg-white/20 p-8 text-center ring-1 ring-white/25 backdrop-blur-2xl">
+                    <div>
+                      <p className="text-sm font-black uppercase tracking-[0.28em] text-slate-400">
+                        Waiting for upload
+                      </p>
+
+                      <p className="mt-3 max-w-md text-sm leading-6 text-slate-600">
+                        Select a product image to create a searchable catalog
+                        profile.
                       </p>
                     </div>
-                  )}
-
-                  <RawJsonViewer
-                    title="View technical save response"
-                    data={saveResult}
-                  />
-                </div>
-              )}
-
-              {!saveLoading && !saveResult && (
-                <div className="flex h-full min-h-72 items-center justify-center rounded-[1.75rem] border border-white/35 bg-white/20 p-8 text-center ring-1 ring-white/25 backdrop-blur-2xl">
-                  <div>
-                    <p className="text-sm font-black uppercase tracking-[0.28em] text-slate-400">
-                      Waiting for upload
-                    </p>
-
-                    <p className="mt-3 max-w-md text-sm leading-6 text-slate-600">
-                      Select a product image to create a searchable catalog
-                      profile.
-                    </p>
                   </div>
-                </div>
-              )}
+                )}
+              </div>
             </div>
-          </div>
-        </GlassCard>
-
-        <div className="mb-8 grid grid-cols-1 gap-8 md:grid-cols-2">
-          <GlassCard>
-            <p className="text-xs font-black uppercase tracking-[0.28em] text-pink-500">
-              Text Discovery
-            </p>
-
-            <h2 className="mt-2 text-2xl font-black text-slate-950">
-              Search by Text
-            </h2>
-
-            <p className="mt-2 text-sm leading-6 text-slate-700">
-              Type a natural product query to find the most relevant catalog
-              matches.
-            </p>
-
-            <input
-              type="text"
-              placeholder="Example: pink floral top"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              className="mt-5 w-full rounded-2xl border border-pink-200/60 bg-white/25 px-4 py-3 text-slate-900 outline-none shadow-sm ring-1 ring-white/30 backdrop-blur-2xl transition placeholder:text-slate-500 focus:border-pink-300/80 focus:bg-white/35 focus:ring-4 focus:ring-pink-200/45"
-            />
-
-            <button
-              onClick={handleTextSearch}
-              disabled={searchLoading}
-              className="mt-4 w-full rounded-2xl border border-slate-700/30 bg-slate-950/90 px-6 py-3 font-black text-white shadow-lg shadow-slate-400/25 ring-1 ring-white/20 backdrop-blur-xl transition hover:bg-slate-800 disabled:bg-slate-400/60"
-            >
-              {searchLoading ? "Searching..." : "Search Catalog"}
-            </button>
           </GlassCard>
-
-          <GlassCard>
-            <p className="text-xs font-black uppercase tracking-[0.28em] text-sky-500">
-              Visual Discovery
-            </p>
-
-            <h2 className="mt-2 text-2xl font-black text-slate-950">
-              Search by Image
-            </h2>
-
-            <p className="mt-2 text-sm leading-6 text-slate-700">
-              Upload a product image to discover visually and semantically
-              similar items.
-            </p>
-
-            <input
-              type="file"
-              accept="image/*"
-              onChange={handleImageSearchFileChange}
-              className="mt-5 w-full rounded-2xl border border-sky-200/60 bg-white/25 px-4 py-3 text-sm text-slate-800 ring-1 ring-white/30 backdrop-blur-2xl file:mr-4 file:rounded-full file:border-0 file:bg-sky-100/70 file:px-4 file:py-2 file:text-sm file:font-bold file:text-sky-800"
-            />
-
-            {imageSearchPreview && (
-              <img
-                src={imageSearchPreview}
-                alt="Search preview"
-                className="mt-4 h-48 w-full rounded-[1.75rem] border border-white/35 bg-white/20 object-contain shadow-inner ring-1 ring-white/25 backdrop-blur-2xl"
-              />
-            )}
-
-            <button
-              onClick={handleImageSearch}
-              disabled={searchLoading}
-              className="mt-4 w-full rounded-2xl border border-sky-300/50 bg-sky-500/85 px-6 py-3 font-black text-white shadow-lg shadow-sky-300/40 ring-1 ring-white/30 backdrop-blur-xl transition hover:bg-sky-600/90 disabled:bg-sky-200/60"
-            >
-              {searchLoading ? "Processing..." : "Find Similar Products"}
-            </button>
-          </GlassCard>
-        </div>
-
-        {searchLoading && (
-          <div className="mb-8 rounded-3xl border border-amber-200/70 bg-amber-100/45 p-4 text-sm font-bold text-amber-800 ring-1 ring-white/30 backdrop-blur-2xl">
-            Searching for relevant product matches...
-          </div>
         )}
 
-        <ProductAnalysisCard
-          title="Image Search Analysis"
-          analysis={vlmAnalysis}
-        />
+        {activeSection === "catalog" && (
+          <CatalogSection
+            products={catalogProducts}
+            catalogLoading={catalogLoading}
+            onRefreshCatalog={handleRefreshCatalog}
+          />
+        )}
 
-        <GlassCard>
-          <div className="mb-6 flex flex-col justify-between gap-4 md:flex-row md:items-end">
-            <div>
-              <p className="text-xs font-black uppercase tracking-[0.28em] text-violet-500">
-                Discovery Output
-              </p>
+        {activeSection === "search" && (
+          <>
+            <div className="mb-8 grid grid-cols-1 gap-8 md:grid-cols-2">
+              <GlassCard>
+                <p className="text-xs font-black uppercase tracking-[0.28em] text-pink-500">
+                  Text Discovery
+                </p>
 
-              <h2 className="mt-2 text-3xl font-black text-slate-950">
-                Search Results
-              </h2>
+                <h2 className="mt-2 text-2xl font-black text-slate-950">
+                  Search by Text
+                </h2>
+
+                <p className="mt-2 text-sm leading-6 text-slate-700">
+                  Type a natural product query to find the most relevant catalog
+                  matches.
+                </p>
+
+                <input
+                  type="text"
+                  placeholder="Example: pink floral top"
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  className="mt-5 w-full rounded-2xl border border-pink-200/60 bg-white/25 px-4 py-3 text-slate-900 outline-none shadow-sm ring-1 ring-white/30 backdrop-blur-2xl transition placeholder:text-slate-500 focus:border-pink-300/80 focus:bg-white/35 focus:ring-4 focus:ring-pink-200/45"
+                />
+
+                <button
+                  onClick={handleTextSearch}
+                  disabled={searchLoading}
+                  className="mt-4 w-full rounded-2xl border border-slate-700/30 bg-slate-950/90 px-6 py-3 font-black text-white shadow-lg shadow-slate-400/25 ring-1 ring-white/20 backdrop-blur-xl transition hover:bg-slate-800 disabled:bg-slate-400/60"
+                >
+                  {searchLoading ? "Searching..." : "Search Catalog"}
+                </button>
+              </GlassCard>
+
+              <GlassCard>
+                <p className="text-xs font-black uppercase tracking-[0.28em] text-sky-500">
+                  Visual Discovery
+                </p>
+
+                <h2 className="mt-2 text-2xl font-black text-slate-950">
+                  Search by Image
+                </h2>
+
+                <p className="mt-2 text-sm leading-6 text-slate-700">
+                  Upload a product image to discover visually and semantically
+                  similar items.
+                </p>
+
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageSearchFileChange}
+                  className="mt-5 w-full rounded-2xl border border-sky-200/60 bg-white/25 px-4 py-3 text-sm text-slate-800 ring-1 ring-white/30 backdrop-blur-2xl file:mr-4 file:rounded-full file:border-0 file:bg-sky-100/70 file:px-4 file:py-2 file:text-sm file:font-bold file:text-sky-800"
+                />
+
+                {imageSearchPreview && (
+                  <img
+                    src={imageSearchPreview}
+                    alt="Search preview"
+                    className="mt-4 h-48 w-full rounded-[1.75rem] border border-white/35 bg-white/20 object-contain shadow-inner ring-1 ring-white/25 backdrop-blur-2xl"
+                  />
+                )}
+
+                <button
+                  onClick={handleImageSearch}
+                  disabled={searchLoading}
+                  className="mt-4 w-full rounded-2xl border border-sky-300/50 bg-sky-500/85 px-6 py-3 font-black text-white shadow-lg shadow-sky-300/40 ring-1 ring-white/30 backdrop-blur-xl transition hover:bg-sky-600/90 disabled:bg-sky-200/60"
+                >
+                  {searchLoading ? "Processing..." : "Find Similar Products"}
+                </button>
+              </GlassCard>
             </div>
 
-            <span className="rounded-full border border-violet-200/70 bg-violet-100/45 px-4 py-2 text-sm font-bold text-violet-800 ring-1 ring-white/30 backdrop-blur-xl">
-              Relevance threshold: {MIN_SCORE}
-            </span>
-          </div>
+            {searchLoading && (
+              <div className="mb-8 rounded-3xl border border-amber-200/70 bg-amber-100/45 p-4 text-sm font-bold text-amber-800 ring-1 ring-white/30 backdrop-blur-2xl">
+                Searching for relevant product matches...
+              </div>
+            )}
 
-          {results.length === 0 ? (
-            <div className="rounded-[1.75rem] border border-dashed border-white/35 bg-white/20 p-8 text-center ring-1 ring-white/25 backdrop-blur-2xl">
-              <p className="text-sm font-black uppercase tracking-[0.28em] text-slate-400">
-                No strong results
-              </p>
+            <ProductAnalysisCard
+              title="Image Search Analysis"
+              analysis={vlmAnalysis}
+            />
 
-              <p className="mt-3 text-sm leading-6 text-slate-600">
-                Search by text or image after adding products. Low-confidence
-                matches are hidden for cleaner results.
-              </p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
-              {results.map((product, index) => (
-                <ProductCard key={index} product={product} />
-              ))}
-            </div>
-          )}
-        </GlassCard>
+            <GlassCard>
+              <div className="mb-6 flex flex-col justify-between gap-4 md:flex-row md:items-end">
+                <div>
+                  <p className="text-xs font-black uppercase tracking-[0.28em] text-violet-500">
+                    Discovery Output
+                  </p>
+
+                  <h2 className="mt-2 text-3xl font-black text-slate-950">
+                    Search Results
+                  </h2>
+                </div>
+
+                <span className="rounded-full border border-violet-200/70 bg-violet-100/45 px-4 py-2 text-sm font-bold text-violet-800 ring-1 ring-white/30 backdrop-blur-xl">
+                  Relevance threshold: {MIN_SCORE}
+                </span>
+              </div>
+
+              {results.length === 0 ? (
+                <div className="rounded-[1.75rem] border border-dashed border-white/35 bg-white/20 p-8 text-center ring-1 ring-white/25 backdrop-blur-2xl">
+                  <p className="text-sm font-black uppercase tracking-[0.28em] text-slate-400">
+                    No strong results
+                  </p>
+
+                  <p className="mt-3 text-sm leading-6 text-slate-600">
+                    Search by text or image after adding products.
+                    Low-confidence matches are hidden for cleaner results.
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
+                  {results.map((product, index) => (
+                    <ProductCard
+                      key={product?.id || product?.point_id || index}
+                      product={product}
+                    />
+                  ))}
+                </div>
+              )}
+            </GlassCard>
+          </>
+        )}
       </div>
     </div>
   );

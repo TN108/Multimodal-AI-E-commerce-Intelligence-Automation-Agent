@@ -27,7 +27,7 @@ const QUERY_EXPANSIONS = {
   tshirt: "t-shirt shirt tee top clothing upper wear",
   "t-shirt": "t-shirt shirt tee top clothing upper wear",
   tee: "tee t-shirt shirt top clothing upper wear",
-  top: "top shirt blouse t-shirt tee clothing upper wear",
+  top: "top shirt blouse t-shirt clothing upper wear",
   blouse: "blouse shirt top women clothing upper wear",
 
   dress: "dress gown formal wear evening wear party wear cocktail dress",
@@ -118,5 +118,10 @@ export async function analyzeAndSaveProduct(file) {
     }
   );
 
+  return response.data;
+}
+
+export async function getProducts() {
+  const response = await apiClient.get("/api/v1/products/");
   return response.data;
 }
