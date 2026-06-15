@@ -1,39 +1,43 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-function LoginPage() {
+function SignupPage() {
   const navigate = useNavigate();
 
+  const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+
   const [formError, setFormError] = useState("");
 
-  const loginAndGoToDashboard = () => {
-    localStorage.setItem("demo_user_logged_in", "true");
-    navigate("/dashboard");
+  const isValidPassword = (passwordValue) => {
+    const hasMinimumLength = passwordValue.length >= 8;
+    const hasCapitalLetter = /[A-Z]/.test(passwordValue);
+    const hasSmallLetter = /[a-z]/.test(passwordValue);
+    const hasNumber = /[0-9]/.test(passwordValue);
+    const hasSpecialCharacter = /[!@#$%^&*(),.?":{}|<>_\-+=/\\[\]`~;]/.test(
+      passwordValue
+    );
+
+    return (
+      hasMinimumLength &&
+      hasCapitalLetter &&
+      hasSmallLetter &&
+      hasNumber &&
+      hasSpecialCharacter
+    );
   };
 
-  const isValidPassword = (passwordValue) => {
-  const hasMinimumLength = passwordValue.length >= 8;
-  const hasCapitalLetter = /[A-Z]/.test(passwordValue);
-  const hasSmallLetter = /[a-z]/.test(passwordValue);
-  const hasNumber = /[0-9]/.test(passwordValue);
-  const hasSpecialCharacter = /[!@#$%^&*(),.?":{}|<>_\-+=/\\[\]`~;]/.test(
-    passwordValue
-  );
-
-  return (
-    hasMinimumLength &&
-    hasCapitalLetter &&
-    hasSmallLetter &&
-    hasNumber &&
-    hasSpecialCharacter
-  );
-};
-  const handleLogin = (event) => {
+  const handleSignup = (event) => {
     event.preventDefault();
 
     setFormError("");
+
+    if (!fullName.trim()) {
+      setFormError("Please enter your full name.");
+      return;
+    }
 
     if (!email.trim()) {
       setFormError("Please enter your email address.");
@@ -47,16 +51,21 @@ function LoginPage() {
 
     if (!isValidPassword(password)) {
       setFormError(
-        "Password must be at least 8 characters and include an uppercase letter, a lowercase letter, a number, and a special character."
+        "Password must be at least 8 characters and include one capital letter, one small letter, one number, and one special character."
       );
       return;
     }
 
-    console.log("Frontend login:", {
-      email,
-    });
+    if (password !== confirmPassword) {
+      setFormError("Password and confirm password do not match.");
+      return;
+    }
 
-    loginAndGoToDashboard();
+    localStorage.setItem("demo_user_logged_in", "true");
+    localStorage.setItem("demo_user_name", fullName);
+    localStorage.setItem("demo_user_email", email);
+
+    navigate("/dashboard");
   };
 
   return (
@@ -81,31 +90,31 @@ function LoginPage() {
             </button>
 
             <p className="text-xs font-black uppercase tracking-[0.35em] text-pink-300">
-              Secure Workspace
+              Create Workspace
             </p>
 
             <h1 className="mt-4 max-w-3xl text-5xl font-black leading-tight tracking-tight md:text-7xl">
-              Login first, then enter your dashboard
+              Create your AI catalog account
             </h1>
 
             <p className="mt-6 max-w-2xl text-base leading-8 text-white/70">
-              Access your AI-powered product intelligence workspace. User
-              accounts, registration, password validation, and protected backend
-              authentication will be connected in Week 3 after PostgreSQL.
+              Register your workspace before entering the dashboard. Real user
+              storage, password hashing, JWT tokens, and protected backend
+              authentication will be connected in Week 3.
             </p>
 
             <div className="mt-8 grid grid-cols-3 gap-3">
               <div className="rounded-3xl border border-white/20 bg-white/10 p-4 ring-1 ring-white/10 backdrop-blur-2xl">
                 <p className="text-2xl font-black">01</p>
                 <p className="mt-1 text-xs font-bold uppercase tracking-wide text-white/55">
-                  Login
+                  Register
                 </p>
               </div>
 
               <div className="rounded-3xl border border-white/20 bg-white/10 p-4 ring-1 ring-white/10 backdrop-blur-2xl">
                 <p className="text-2xl font-black">02</p>
                 <p className="mt-1 text-xs font-bold uppercase tracking-wide text-white/55">
-                  Verify
+                  Secure
                 </p>
               </div>
 
@@ -122,22 +131,37 @@ function LoginPage() {
             <div className="absolute -inset-6 rounded-[3rem] bg-gradient-to-br from-pink-500/30 via-sky-500/20 to-violet-500/30 blur-2xl" />
 
             <form
-              onSubmit={handleLogin}
+              onSubmit={handleSignup}
               className="relative rounded-[3rem] border border-white/20 bg-white/10 p-6 shadow-[0_35px_120px_rgba(0,0,0,0.45)] ring-1 ring-white/20 backdrop-blur-3xl md:p-8"
             >
               <div className="mb-8">
                 <p className="text-xs font-black uppercase tracking-[0.3em] text-sky-300">
-                  Welcome Back
+                  New Account
                 </p>
 
-                <h2 className="mt-3 text-3xl font-black">Sign in</h2>
+                <h2 className="mt-3 text-3xl font-black">Sign up</h2>
 
                 <p className="mt-3 text-sm leading-7 text-white/65">
-                  Enter your email and password to access the dashboard.
+                  Create an account to access the product intelligence
+                  dashboard.
                 </p>
               </div>
 
               <div className="space-y-5">
+                <div>
+                  <label className="text-xs font-black uppercase tracking-[0.25em] text-white/55">
+                    Full Name
+                  </label>
+
+                  <input
+                    type="text"
+                    value={fullName}
+                    onChange={(event) => setFullName(event.target.value)}
+                    placeholder="Talha Nasir"
+                    className="mt-2 w-full rounded-2xl border border-white/20 bg-white/10 px-4 py-4 text-white outline-none ring-1 ring-white/10 backdrop-blur-2xl transition placeholder:text-white/35 focus:border-sky-300/50 focus:ring-4 focus:ring-sky-300/20"
+                  />
+                </div>
+
                 <div>
                   <label className="text-xs font-black uppercase tracking-[0.25em] text-white/55">
                     Email
@@ -161,14 +185,31 @@ function LoginPage() {
                     type="password"
                     value={password}
                     onChange={(event) => setPassword(event.target.value)}
-                    placeholder="Minimum 8 characters, include @ or #"
+                    placeholder="Example: Admin123@"
                     className="mt-2 w-full rounded-2xl border border-white/20 bg-white/10 px-4 py-4 text-white outline-none ring-1 ring-white/10 backdrop-blur-2xl transition placeholder:text-white/35 focus:border-pink-300/50 focus:ring-4 focus:ring-pink-300/20"
                   />
 
                   <p className="mt-2 text-xs leading-5 text-white/45">
                     Password must be at least 8 characters and include one
+                    capital letter, one small letter, one number, and one
                     special character.
                   </p>
+                </div>
+
+                <div>
+                  <label className="text-xs font-black uppercase tracking-[0.25em] text-white/55">
+                    Confirm Password
+                  </label>
+
+                  <input
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(event) =>
+                      setConfirmPassword(event.target.value)
+                    }
+                    placeholder="Confirm password"
+                    className="mt-2 w-full rounded-2xl border border-white/20 bg-white/10 px-4 py-4 text-white outline-none ring-1 ring-white/10 backdrop-blur-2xl transition placeholder:text-white/35 focus:border-violet-300/50 focus:ring-4 focus:ring-violet-300/20"
+                  />
                 </div>
 
                 {formError && (
@@ -181,14 +222,21 @@ function LoginPage() {
                   type="submit"
                   className="w-full rounded-2xl border border-white/20 bg-white px-7 py-4 text-sm font-black text-slate-950 shadow-[0_25px_80px_rgba(255,255,255,0.25)] transition hover:-translate-y-1 hover:bg-slate-100"
                 >
-                  Login to Dashboard
+                  Create Account
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => navigate("/login")}
+                  className="w-full rounded-2xl border border-white/20 bg-white/10 px-7 py-4 text-sm font-black text-white shadow-2xl ring-1 ring-white/20 backdrop-blur-2xl transition hover:-translate-y-1 hover:bg-white/15"
+                >
+                  Already have an account? Login
                 </button>
               </div>
 
               <div className="mt-6 rounded-2xl border border-amber-300/20 bg-amber-300/10 p-4 text-sm leading-6 text-amber-100">
-                Temporary note: this login page currently checks only frontend
-                validation. Real registration, password hashing, JWT
-                authentication, and protected backend access will be added in
+                Temporary note: signup currently uses frontend validation and
+                local storage only. Real database registration will be added in
                 Week 3.
               </div>
             </form>
@@ -225,4 +273,4 @@ function LoginPage() {
   );
 }
 
-export default LoginPage;
+export default SignupPage;

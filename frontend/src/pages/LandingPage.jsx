@@ -52,10 +52,10 @@ function LandingPage() {
 
             <div className="mt-8 flex flex-col gap-4 sm:flex-row">
               <button
-                onClick={() => navigate("/dashboard")}
+                onClick={() => navigate("/signup")}
                 className="rounded-2xl border border-white/20 bg-white px-7 py-4 text-sm font-black text-slate-950 shadow-[0_25px_80px_rgba(255,255,255,0.25)] transition hover:-translate-y-1 hover:bg-slate-100"
               >
-                Enter Dashboard
+                Create Account
               </button>
 
               <button
@@ -78,21 +78,21 @@ function LandingPage() {
               <div className="rounded-3xl border border-white/20 bg-white/10 p-4 ring-1 ring-white/10 backdrop-blur-2xl">
                 <p className="text-2xl font-black">01</p>
                 <p className="mt-1 text-xs font-bold uppercase tracking-wide text-white/55">
-                  Analyze
+                  Register
                 </p>
               </div>
 
               <div className="rounded-3xl border border-white/20 bg-white/10 p-4 ring-1 ring-white/10 backdrop-blur-2xl">
                 <p className="text-2xl font-black">02</p>
                 <p className="mt-1 text-xs font-bold uppercase tracking-wide text-white/55">
-                  Save
+                  Login
                 </p>
               </div>
 
               <div className="rounded-3xl border border-white/20 bg-white/10 p-4 ring-1 ring-white/10 backdrop-blur-2xl">
                 <p className="text-2xl font-black">03</p>
                 <p className="mt-1 text-xs font-bold uppercase tracking-wide text-white/55">
-                  Search
+                  Dashboard
                 </p>
               </div>
             </div>
@@ -209,10 +209,10 @@ function LandingPage() {
 
             <div className="mt-8 flex flex-col gap-4 sm:flex-row">
               <button
-                onClick={() => navigate("/dashboard")}
+                onClick={() => navigate("/signup")}
                 className="rounded-2xl border border-white/20 bg-white px-7 py-4 text-sm font-black text-slate-950 shadow-[0_25px_80px_rgba(255,255,255,0.25)] transition hover:-translate-y-1 hover:bg-slate-100"
               >
-                Start Using Platform
+                Create Account
               </button>
 
               <button
