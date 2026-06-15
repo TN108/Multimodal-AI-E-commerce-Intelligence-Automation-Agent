@@ -1,6 +1,9 @@
 import { useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
-function LandingPage({ onEnter }) {
+function LandingPage() {
+  const navigate = useNavigate();
+
   const [showFeatures, setShowFeatures] = useState(false);
   const featuresRef = useRef(null);
 
@@ -49,10 +52,17 @@ function LandingPage({ onEnter }) {
 
             <div className="mt-8 flex flex-col gap-4 sm:flex-row">
               <button
-                onClick={onEnter}
+                onClick={() => navigate("/dashboard")}
                 className="rounded-2xl border border-white/20 bg-white px-7 py-4 text-sm font-black text-slate-950 shadow-[0_25px_80px_rgba(255,255,255,0.25)] transition hover:-translate-y-1 hover:bg-slate-100"
               >
                 Enter Dashboard
+              </button>
+
+              <button
+                onClick={() => navigate("/login")}
+                className="rounded-2xl border border-white/20 bg-white/10 px-7 py-4 text-sm font-black text-white shadow-2xl ring-1 ring-white/20 backdrop-blur-2xl transition hover:-translate-y-1 hover:bg-white/15"
+              >
+                Login
               </button>
 
               <button
@@ -199,7 +209,7 @@ function LandingPage({ onEnter }) {
 
             <div className="mt-8 flex flex-col gap-4 sm:flex-row">
               <button
-                onClick={onEnter}
+                onClick={() => navigate("/dashboard")}
                 className="rounded-2xl border border-white/20 bg-white px-7 py-4 text-sm font-black text-slate-950 shadow-[0_25px_80px_rgba(255,255,255,0.25)] transition hover:-translate-y-1 hover:bg-slate-100"
               >
                 Start Using Platform
