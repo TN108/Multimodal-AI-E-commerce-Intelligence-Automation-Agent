@@ -6,6 +6,7 @@ import {
   getProducts,
 } from "./api/multimodalApi";
 
+import LandingPage from "./components/LandingPage";
 import GlassCard, { Field } from "./components/GlassCard";
 import ProductAnalysisCard from "./components/ProductAnalysisCard";
 import ProductCard from "./components/ProductCard";
@@ -69,6 +70,7 @@ function ActionButton({ title, description, active, onClick, accent }) {
 }
 
 function App() {
+  const [showLandingPage, setShowLandingPage] = useState(true);
   const [activeSection, setActiveSection] = useState("add");
 
   const [query, setQuery] = useState("");
@@ -285,6 +287,10 @@ function App() {
       setSearchLoading(false);
     }
   };
+
+  if (showLandingPage) {
+    return <LandingPage onEnter={() => setShowLandingPage(false)} />;
+  }
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-gradient-to-br from-rose-200 via-sky-200 to-violet-300 px-4 py-8 text-slate-950 md:px-8">
