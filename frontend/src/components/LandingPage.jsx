@@ -1,4 +1,20 @@
+import { useRef, useState } from "react";
+
 function LandingPage({ onEnter }) {
+  const [showFeatures, setShowFeatures] = useState(false);
+  const featuresRef = useRef(null);
+
+  const handleViewFeatures = () => {
+    setShowFeatures(true);
+
+    setTimeout(() => {
+      featuresRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 100);
+  };
+
   return (
     <div className="relative min-h-screen overflow-hidden bg-gradient-to-br from-slate-950 via-violet-950 to-slate-900 px-4 py-8 text-white md:px-8">
       <div className="pointer-events-none absolute inset-0">
@@ -41,6 +57,7 @@ function LandingPage({ onEnter }) {
 
               <button
                 type="button"
+                onClick={handleViewFeatures}
                 className="rounded-2xl border border-white/20 bg-white/10 px-7 py-4 text-sm font-black text-white shadow-2xl ring-1 ring-white/20 backdrop-blur-2xl transition hover:-translate-y-1 hover:bg-white/15"
               >
                 View Features
@@ -131,6 +148,74 @@ function LandingPage({ onEnter }) {
           </div>
         </div>
       </div>
+
+      {showFeatures && (
+        <section
+          ref={featuresRef}
+          className="relative mx-auto mb-12 max-w-7xl animate-[fadeInUp_0.7s_ease-out]"
+        >
+          <div className="rounded-[3rem] border border-white/20 bg-white/10 p-6 shadow-[0_35px_120px_rgba(0,0,0,0.35)] ring-1 ring-white/20 backdrop-blur-3xl md:p-8">
+            <div className="mb-8">
+              <p className="text-xs font-black uppercase tracking-[0.35em] text-sky-300">
+                Platform Features
+              </p>
+
+              <h2 className="mt-3 text-4xl font-black">
+                What this platform can do
+              </h2>
+
+              <p className="mt-3 max-w-2xl text-sm leading-7 text-white/70">
+                The system combines image understanding, semantic search, and
+                catalog automation into one e-commerce intelligence workflow.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
+              <div className="rounded-[2rem] border border-white/15 bg-white/10 p-5 ring-1 ring-white/10 backdrop-blur-2xl">
+                <p className="text-2xl font-black">Smart Image Analysis</p>
+                <p className="mt-3 text-sm leading-7 text-white/65">
+                  Upload a product image and extract product type, category,
+                  colors, material guess, style, visible features, and search
+                  tags.
+                </p>
+              </div>
+
+              <div className="rounded-[2rem] border border-white/15 bg-white/10 p-5 ring-1 ring-white/10 backdrop-blur-2xl">
+                <p className="text-2xl font-black">Searchable Catalog</p>
+                <p className="mt-3 text-sm leading-7 text-white/65">
+                  Convert image analysis into searchable text and save products
+                  into the catalog for future discovery.
+                </p>
+              </div>
+
+              <div className="rounded-[2rem] border border-white/15 bg-white/10 p-5 ring-1 ring-white/10 backdrop-blur-2xl">
+                <p className="text-2xl font-black">Multimodal Search</p>
+                <p className="mt-3 text-sm leading-7 text-white/65">
+                  Search by text or image and retrieve relevant catalog matches
+                  using vector similarity.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-8 flex flex-col gap-4 sm:flex-row">
+              <button
+                onClick={onEnter}
+                className="rounded-2xl border border-white/20 bg-white px-7 py-4 text-sm font-black text-slate-950 shadow-[0_25px_80px_rgba(255,255,255,0.25)] transition hover:-translate-y-1 hover:bg-slate-100"
+              >
+                Start Using Platform
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowFeatures(false)}
+                className="rounded-2xl border border-white/20 bg-white/10 px-7 py-4 text-sm font-black text-white shadow-2xl ring-1 ring-white/20 backdrop-blur-2xl transition hover:-translate-y-1 hover:bg-white/15"
+              >
+                Hide Features
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
 
       <style>
         {`
