@@ -53,3 +53,13 @@ def test_db_connection():
 
     except Exception as e:
         raise RuntimeError(f"Database connection failed: {str(e)}")
+# Local environment files
+.env
+.venv/
+venv/
+
+# Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
