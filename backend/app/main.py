@@ -29,7 +29,7 @@ app.add_middleware(
 
 @app.on_event("startup")
 def startup_event():
-    Base.metadata.create_all(bind=engine)
+    Base.metadata.create_all(bind=engine) #creates the database tables if they do not exist.
     create_collection_if_not_exists()
 
 
