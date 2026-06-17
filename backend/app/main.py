@@ -2,10 +2,12 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.router import api_router
-from app.api.v1 import vision
+from app.api.v1 import auth
 from app.api.v1 import multimodal
+from app.api.v1 import vision
+from app.database import Base, engine, test_db_connection
+from app.models.user import User
 from app.services.qdrant_service import create_collection_if_not_exists
-from app.database import test_db_connection
 
 
 app = FastAPI(
@@ -27,6 +29,7 @@ app.add_middleware(
 
 @app.on_event("startup")
 def startup_event():
+    Base.metadata.create_all(bind=engine)
     create_collection_if_not_exists()
 
 
@@ -57,11 +60,20 @@ def database_health_check():
 
 app.include_router(api_router, prefix="/api/v1")
 
+
+app.include_router(
+    auth.router,
+    prefix="/api/v1/auth",
+    tags=["Auth"],
+)
+
+
 app.include_router(
     vision.router,
     prefix="/api/v1/vision",
     tags=["Vision"],
 )
+
 
 app.include_router(
     multimodal.router,
