@@ -9,6 +9,7 @@ from app.schemas.auth import (
     TokenResponse,
     UserResponse,
 )
+from app.utils.auth_dependencies import get_current_user
 from app.utils.jwt import create_access_token
 from app.utils.security import (
     hash_password,
@@ -98,3 +99,11 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
         "token_type": "bearer",
         "user": user,
     }
+
+
+@router.get(
+    "/me",
+    response_model=UserResponse,
+)
+def get_logged_in_user(current_user: User = Depends(get_current_user)):
+    return current_user

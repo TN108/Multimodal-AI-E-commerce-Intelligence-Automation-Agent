@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
-from jose import jwt
+from jose import JWTError, jwt
 
 
 BASE_DIR = Path(__file__).resolve().parents[2]
@@ -41,3 +41,17 @@ def create_access_token(data: dict) -> str:
     )
 
     return encoded_jwt
+
+
+def decode_access_token(token: str) -> dict:
+    try:
+        payload = jwt.decode(
+            token,
+            JWT_SECRET_KEY,
+            algorithms=[JWT_ALGORITHM],
+        )
+
+        return payload
+
+    except JWTError:
+        raise ValueError("Invalid or expired token.")
