@@ -1,12 +1,17 @@
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from sqlalchemy.orm import Session
 
-from app.models.product import Product, ProductSearch
-from app.services.product_service import (
-    create_product_service,
-    get_products_service,
-    search_products_service,
+from app.database import get_db
+from app.models.product import Product
+from app.models.user import User
+from app.schemas.product import (
+    ProductCreateRequest,
+    ProductResponse,
+    ProductSearch,
 )
+from app.services.product_service import search_products_service
 from app.services.vlm_service import analyze_product_image
+from app.utils.auth_dependencies import get_current_user
 
 
 router = APIRouter()
@@ -15,12 +20,6 @@ router = APIRouter()
 def safe_join(value) -> str:
     """
     Safely converts strings, lists, dictionaries, and mixed VLM outputs into clean text.
-
-    This prevents crashes when the VLM returns:
-    ["Collar", "Buttons"]
-
-    or:
-    [{"feature": "Collar"}, {"feature": "Buttons"}]
     """
     if value is None:
         return ""
@@ -52,14 +51,47 @@ def safe_join(value) -> str:
     return str(value)
 
 
-@router.get("/")
-def get_products():
-    return get_products_service()
+@router.get(
+    "/",
+    response_model=list[ProductResponse],
+)
+def get_products(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    products = (
+        db.query(Product)
+        .filter(Product.user_id == current_user.id)
+        .order_by(Product.id.desc())
+        .all()
+    )
+
+    return products
 
 
-@router.post("/")
-def create_product(product: Product):
-    return create_product_service(product)
+@router.post(
+    "/",
+    response_model=ProductResponse,
+)
+def create_product(
+    product: ProductCreateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    new_product = Product(
+        name=product.name.strip(),
+        category=product.category,
+        description=product.description,
+        image_url=product.image_url,
+        qdrant_point_id=product.qdrant_point_id,
+        user_id=current_user.id,
+    )
+
+    db.add(new_product)
+    db.commit()
+    db.refresh(new_product)
+
+    return new_product
 
 
 @router.post("/search")
@@ -71,7 +103,11 @@ def search_products(product_search: ProductSearch):
 
 
 @router.post("/analyze-and-save")
-async def analyze_and_save_product(file: UploadFile = File(...)):
+async def analyze_and_save_product(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     allowed_types = ["image/jpeg", "image/png", "image/webp"]
 
     if file.content_type not in allowed_types:
@@ -124,19 +160,32 @@ async def analyze_and_save_product(file: UploadFile = File(...)):
         f"Search tags: {tag_text}."
     ).strip()
 
-    product = Product(
+    new_product = Product(
         name=product_name,
         description=description,
-        price=0.0,
         category=category,
+        image_url=None,
+        qdrant_point_id=None,
+        user_id=current_user.id,
     )
 
-    saved_product = create_product_service(product)
+    db.add(new_product)
+    db.commit()
+    db.refresh(new_product)
 
     return {
         "message": "Product analyzed and saved successfully",
         "filename": file.filename,
         "content_type": file.content_type,
         "vlm_analysis": analysis,
-        "saved_product": saved_product,
+        "saved_product": {
+            "id": new_product.id,
+            "name": new_product.name,
+            "category": new_product.category,
+            "description": new_product.description,
+            "image_url": new_product.image_url,
+            "qdrant_point_id": new_product.qdrant_point_id,
+            "user_id": new_product.user_id,
+            "created_at": new_product.created_at,
+        },
     }

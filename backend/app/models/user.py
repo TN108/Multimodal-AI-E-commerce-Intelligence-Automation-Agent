@@ -1,4 +1,5 @@
 from sqlalchemy import Column, DateTime, Integer, String, func
+from sqlalchemy.orm import relationship
 
 from app.database import Base
 
@@ -15,3 +16,9 @@ class User(Base):
     hashed_password = Column(String(255), nullable=False)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    products = relationship(
+        "Product",
+        back_populates="owner",
+        cascade="all, delete-orphan",
+    )

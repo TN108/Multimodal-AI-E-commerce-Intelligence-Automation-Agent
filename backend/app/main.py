@@ -7,6 +7,7 @@ from app.api.v1 import multimodal
 from app.api.v1 import vision
 from app.database import Base, engine, test_db_connection
 from app.models.user import User
+from app.models.product import Product
 from app.services.qdrant_service import create_collection_if_not_exists
 
 
@@ -29,7 +30,13 @@ app.add_middleware(
 
 @app.on_event("startup")
 def startup_event():
-    Base.metadata.create_all(bind=engine) #creates the database tables if they do not exist.
+    # Creates database tables if they do not already exist.
+    # Current tables:
+    # - users
+    # - products
+    Base.metadata.create_all(bind=engine)
+
+    # Creates Qdrant collection if it does not already exist.
     create_collection_if_not_exists()
 
 
