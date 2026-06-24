@@ -6,31 +6,29 @@ function LoginPage() {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [formError, setFormError] = useState("");
 
-  const loginAndGoToDashboard = () => {
-    localStorage.setItem("demo_user_logged_in", "true");
-    navigate("/dashboard");
+  const [formError, setFormError] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+
+  const getErrorMessage = (errorData) => {
+    if (!errorData) {
+      return "Login failed. Please try again.";
+    }
+
+    if (typeof errorData.detail === "string") {
+      return errorData.detail;
+    }
+
+    if (Array.isArray(errorData.detail)) {
+      return errorData.detail
+        .map((item) => item.msg || "Invalid input.")
+        .join(" ");
+    }
+
+    return "Login failed. Please check your email and password.";
   };
 
-  const isValidPassword = (passwordValue) => {
-  const hasMinimumLength = passwordValue.length >= 8;
-  const hasCapitalLetter = /[A-Z]/.test(passwordValue);
-  const hasSmallLetter = /[a-z]/.test(passwordValue);
-  const hasNumber = /[0-9]/.test(passwordValue);
-  const hasSpecialCharacter = /[!@#$%^&*(),.?":{}|<>_\-+=/\\[\]`~;]/.test(
-    passwordValue
-  );
-
-  return (
-    hasMinimumLength &&
-    hasCapitalLetter &&
-    hasSmallLetter &&
-    hasNumber &&
-    hasSpecialCharacter
-  );
-};
-  const handleLogin = (event) => {
+  const handleLogin = async (event) => {
     event.preventDefault();
 
     setFormError("");
@@ -45,18 +43,45 @@ function LoginPage() {
       return;
     }
 
-    if (!isValidPassword(password)) {
-      setFormError(
-        "Password must be at least 8 characters and include an uppercase letter, a lowercase letter, a number, and a special character."
+    try {
+      setIsLoading(true);
+
+      const response = await fetch(
+        "http://127.0.0.1:8000/api/v1/auth/login",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            email: email.trim().toLowerCase(),
+            password: password,
+          }),
+        }
       );
-      return;
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        setFormError(getErrorMessage(data));
+        return;
+      }
+
+      localStorage.removeItem("demo_user_logged_in");
+      localStorage.removeItem("demo_user_name");
+      localStorage.removeItem("demo_user_email");
+
+      localStorage.setItem("token", data.access_token);
+      localStorage.setItem("user", JSON.stringify(data.user));
+
+      navigate("/dashboard");
+    } catch (error) {
+      setFormError(
+        "Cannot connect to backend. Make sure FastAPI is running on http://127.0.0.1:8000."
+      );
+    } finally {
+      setIsLoading(false);
     }
-
-    console.log("Frontend login:", {
-      email,
-    });
-
-    loginAndGoToDashboard();
   };
 
   return (
@@ -89,9 +114,8 @@ function LoginPage() {
             </h1>
 
             <p className="mt-6 max-w-2xl text-base leading-8 text-white/70">
-              Access your AI-powered product intelligence workspace. User
-              accounts, registration, password validation, and protected backend
-              authentication will be connected in Week 3 after PostgreSQL.
+              Access your AI-powered product intelligence workspace. Login is
+              now connected to the FastAPI backend with JWT authentication.
             </p>
 
             <div className="mt-8 grid grid-cols-3 gap-3">
@@ -161,13 +185,12 @@ function LoginPage() {
                     type="password"
                     value={password}
                     onChange={(event) => setPassword(event.target.value)}
-                    placeholder="Minimum 8 characters, include @ or #"
+                    placeholder="Enter your password"
                     className="mt-2 w-full rounded-2xl border border-white/20 bg-white/10 px-4 py-4 text-white outline-none ring-1 ring-white/10 backdrop-blur-2xl transition placeholder:text-white/35 focus:border-pink-300/50 focus:ring-4 focus:ring-pink-300/20"
                   />
 
                   <p className="mt-2 text-xs leading-5 text-white/45">
-                    Password must be at least 8 characters and include one
-                    special character.
+                    Use the same password you created during signup.
                   </p>
                 </div>
 
@@ -179,17 +202,24 @@ function LoginPage() {
 
                 <button
                   type="submit"
-                  className="w-full rounded-2xl border border-white/20 bg-white px-7 py-4 text-sm font-black text-slate-950 shadow-[0_25px_80px_rgba(255,255,255,0.25)] transition hover:-translate-y-1 hover:bg-slate-100"
+                  disabled={isLoading}
+                  className="w-full rounded-2xl border border-white/20 bg-white px-7 py-4 text-sm font-black text-slate-950 shadow-[0_25px_80px_rgba(255,255,255,0.25)] transition hover:-translate-y-1 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0"
                 >
-                  Login to Dashboard
+                  {isLoading ? "Logging in..." : "Login to Dashboard"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => navigate("/signup")}
+                  className="w-full rounded-2xl border border-white/20 bg-white/10 px-7 py-4 text-sm font-black text-white shadow-2xl ring-1 ring-white/20 backdrop-blur-2xl transition hover:-translate-y-1 hover:bg-white/15"
+                >
+                  Do not have an account? Sign up
                 </button>
               </div>
 
-              <div className="mt-6 rounded-2xl border border-amber-300/20 bg-amber-300/10 p-4 text-sm leading-6 text-amber-100">
-                Temporary note: this login page currently checks only frontend
-                validation. Real registration, password hashing, JWT
-                authentication, and protected backend access will be added in
-                Week 3.
+              <div className="mt-6 rounded-2xl border border-emerald-300/20 bg-emerald-300/10 p-4 text-sm leading-6 text-emerald-100">
+                Login is now connected to the real FastAPI backend. A JWT token
+                will be saved after successful login.
               </div>
             </form>
           </div>

@@ -1,10 +1,7 @@
 import { useEffect, useState } from "react";
-import {
-  searchByText,
-  searchByImage,
-  analyzeAndSaveProduct,
-  getProducts,
-} from "../api/multimodalApi";
+import { useNavigate } from "react-router-dom";
+
+import { searchByText, searchByImage } from "../api/multimodalApi";
 
 import GlassCard, { Field } from "../components/GlassCard";
 import ProductAnalysisCard from "../components/ProductAnalysisCard";
@@ -19,6 +16,8 @@ import {
   getSearchTags,
   getResultsArray,
 } from "../utils/productHelpers";
+
+const API_BASE_URL = "http://127.0.0.1:8000/api/v1";
 
 const HERO_SLIDES = [
   {
@@ -69,8 +68,9 @@ function ActionButton({ title, description, active, onClick, accent }) {
 }
 
 function DashboardPage() {
-  const [activeSection, setActiveSection] = useState("add");
+  const navigate = useNavigate();
 
+  const [activeSection, setActiveSection] = useState("add");
   const [query, setQuery] = useState("");
 
   const [selectedFile, setSelectedFile] = useState(null);
@@ -94,6 +94,54 @@ function DashboardPage() {
 
   const activeSlide = HERO_SLIDES[currentSlide];
 
+  let user = null;
+
+  try {
+    const storedUser = localStorage.getItem("user");
+    user = storedUser ? JSON.parse(storedUser) : null;
+  } catch {
+    user = null;
+  }
+
+  const getToken = () => {
+    return localStorage.getItem("token");
+  };
+
+  const clearAuthAndGoToLogin = () => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+
+    localStorage.removeItem("demo_user_logged_in");
+    localStorage.removeItem("demo_user_name");
+    localStorage.removeItem("demo_user_email");
+
+    navigate("/login");
+  };
+
+  const handleLogout = () => {
+    clearAuthAndGoToLogin();
+  };
+
+  const getBackendErrorMessage = async (response, fallbackMessage) => {
+    try {
+      const data = await response.json();
+
+      if (typeof data.detail === "string") {
+        return data.detail;
+      }
+
+      if (Array.isArray(data.detail)) {
+        return data.detail
+          .map((item) => item.msg || "Invalid request.")
+          .join(" ");
+      }
+
+      return fallbackMessage;
+    } catch {
+      return fallbackMessage;
+    }
+  };
+
   useEffect(() => {
     const intervalId = setInterval(() => {
       setCurrentSlide((previousSlide) =>
@@ -105,23 +153,54 @@ function DashboardPage() {
   }, []);
 
   const handleRefreshCatalog = async () => {
+    const token = getToken();
+
+    if (!token) {
+      clearAuthAndGoToLogin();
+      return;
+    }
+
     setCatalogLoading(true);
     setError("");
 
     try {
-      const data = await getProducts();
+      const response = await fetch(`${API_BASE_URL}/products/`, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (response.status === 401 || response.status === 403) {
+        clearAuthAndGoToLogin();
+        return;
+      }
+
+      if (!response.ok) {
+        const message = await getBackendErrorMessage(
+          response,
+          "Catalog refresh failed. Check backend, products API, and CORS."
+        );
+
+        setError(message);
+        return;
+      }
+
+      const data = await response.json();
 
       console.log("Catalog products response:", data);
 
-      setCatalogProducts(getResultsArray(data));
+      if (Array.isArray(data)) {
+        setCatalogProducts(data);
+      } else {
+        setCatalogProducts(getResultsArray(data));
+      }
     } catch (error) {
       console.error("Catalog refresh failed:", error);
 
-      const backendMessage =
-        error.response?.data?.detail ||
-        "Catalog refresh failed. Check backend, products API, and CORS.";
-
-      setError(backendMessage);
+      setError(
+        "Catalog refresh failed. Make sure FastAPI is running and the backend is reachable."
+      );
     } finally {
       setCatalogLoading(false);
     }
@@ -193,6 +272,13 @@ function DashboardPage() {
   };
 
   const handleAnalyzeAndSaveProduct = async () => {
+    const token = getToken();
+
+    if (!token) {
+      clearAuthAndGoToLogin();
+      return;
+    }
+
     if (!addProductFile) {
       setError("Please select a product image first.");
       return;
@@ -204,7 +290,33 @@ function DashboardPage() {
     setSaveResult(null);
 
     try {
-      const data = await analyzeAndSaveProduct(addProductFile);
+      const formData = new FormData();
+      formData.append("file", addProductFile);
+
+      const response = await fetch(`${API_BASE_URL}/products/analyze-and-save`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        body: formData,
+      });
+
+      if (response.status === 401 || response.status === 403) {
+        clearAuthAndGoToLogin();
+        return;
+      }
+
+      if (!response.ok) {
+        const message = await getBackendErrorMessage(
+          response,
+          "Analyze and save failed. Check backend, database, AI service, and CORS."
+        );
+
+        setError(message);
+        return;
+      }
+
+      const data = await response.json();
 
       console.log("Analyze and save response:", data);
 
@@ -213,11 +325,9 @@ function DashboardPage() {
     } catch (error) {
       console.error("Analyze and save failed:", error);
 
-      const backendMessage =
-        error.response?.data?.detail ||
-        "Analyze and save failed. Check backend, database, AI service, and CORS.";
-
-      setError(backendMessage);
+      setError(
+        "Analyze and save failed. Make sure FastAPI is running and the backend is reachable."
+      );
     } finally {
       setSaveLoading(false);
     }
@@ -285,6 +395,7 @@ function DashboardPage() {
       setSearchLoading(false);
     }
   };
+
   return (
     <div className="relative min-h-screen overflow-hidden bg-gradient-to-br from-rose-200 via-sky-200 to-violet-300 px-4 py-8 text-slate-950 md:px-8">
       <div className="pointer-events-none fixed inset-0 opacity-80">
@@ -296,6 +407,27 @@ function DashboardPage() {
       <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.55),transparent_34%),radial-gradient(circle_at_bottom_right,rgba(255,255,255,0.40),transparent_30%)]" />
 
       <div className="relative mx-auto max-w-7xl">
+        <div className="mb-6 flex flex-col justify-between gap-3 rounded-[2rem] border border-white/35 bg-white/20 p-4 shadow-sm ring-1 ring-white/30 backdrop-blur-3xl md:flex-row md:items-center">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.28em] text-slate-500">
+              Logged In Workspace
+            </p>
+
+            <p className="mt-1 text-sm font-bold text-slate-800">
+              {user?.name ? `Welcome, ${user.name}` : "Authenticated user"}
+              {user?.email ? ` · ${user.email}` : ""}
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleLogout}
+            className="rounded-2xl border border-rose-200/70 bg-rose-100/60 px-5 py-3 text-sm font-black text-rose-800 shadow-sm ring-1 ring-white/30 backdrop-blur-xl transition hover:-translate-y-1 hover:bg-rose-200/70"
+          >
+            Logout
+          </button>
+        </div>
+
         <section className="mb-8 overflow-hidden rounded-[2.5rem] border border-white/35 bg-white/20 shadow-[0_35px_120px_rgba(15,23,42,0.22)] ring-1 ring-white/30 backdrop-blur-3xl">
           <div className="grid grid-cols-1 lg:grid-cols-[1.05fr_0.95fr]">
             <div className="p-8 md:p-10">
@@ -333,7 +465,6 @@ function DashboardPage() {
               <div className="mt-8 grid grid-cols-3 gap-3">
                 <div className="rounded-3xl border border-white/35 bg-white/20 p-4 shadow-sm ring-1 ring-white/30 backdrop-blur-2xl">
                   <p className="text-2xl font-black text-slate-950">01</p>
-
                   <p className="mt-1 text-xs font-bold uppercase tracking-wide text-slate-500">
                     Upload
                   </p>
@@ -341,7 +472,6 @@ function DashboardPage() {
 
                 <div className="rounded-3xl border border-white/35 bg-white/20 p-4 shadow-sm ring-1 ring-white/30 backdrop-blur-2xl">
                   <p className="text-2xl font-black text-slate-950">02</p>
-
                   <p className="mt-1 text-xs font-bold uppercase tracking-wide text-slate-500">
                     Enrich
                   </p>
@@ -349,7 +479,6 @@ function DashboardPage() {
 
                 <div className="rounded-3xl border border-white/35 bg-white/20 p-4 shadow-sm ring-1 ring-white/30 backdrop-blur-2xl">
                   <p className="text-2xl font-black text-slate-950">03</p>
-
                   <p className="mt-1 text-xs font-bold uppercase tracking-wide text-slate-500">
                     Discover
                   </p>
@@ -747,4 +876,3 @@ function DashboardPage() {
 }
 
 export default DashboardPage;
-

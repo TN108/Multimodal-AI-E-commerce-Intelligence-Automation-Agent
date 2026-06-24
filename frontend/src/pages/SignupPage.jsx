@@ -10,6 +10,7 @@ function SignupPage() {
   const [confirmPassword, setConfirmPassword] = useState("");
 
   const [formError, setFormError] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
 
   const isValidPassword = (passwordValue) => {
     const hasMinimumLength = passwordValue.length >= 8;
@@ -29,7 +30,25 @@ function SignupPage() {
     );
   };
 
-  const handleSignup = (event) => {
+  const getErrorMessage = (errorData) => {
+    if (!errorData) {
+      return "Signup failed. Please try again.";
+    }
+
+    if (typeof errorData.detail === "string") {
+      return errorData.detail;
+    }
+
+    if (Array.isArray(errorData.detail)) {
+      return errorData.detail
+        .map((item) => item.msg || "Invalid input.")
+        .join(" ");
+    }
+
+    return "Signup failed. Please check your information.";
+  };
+
+  const handleSignup = async (event) => {
     event.preventDefault();
 
     setFormError("");
@@ -61,11 +80,43 @@ function SignupPage() {
       return;
     }
 
-    localStorage.setItem("demo_user_logged_in", "true");
-    localStorage.setItem("demo_user_name", fullName);
-    localStorage.setItem("demo_user_email", email);
+    try {
+      setIsLoading(true);
 
-    navigate("/dashboard");
+      const response = await fetch(
+        "http://127.0.0.1:8000/api/v1/auth/signup",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            name: fullName.trim(),
+            email: email.trim().toLowerCase(),
+            password: password,
+          }),
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        setFormError(getErrorMessage(data));
+        return;
+      }
+
+      localStorage.removeItem("demo_user_logged_in");
+      localStorage.removeItem("demo_user_name");
+      localStorage.removeItem("demo_user_email");
+
+      navigate("/login");
+    } catch (error) {
+      setFormError(
+        "Cannot connect to backend. Make sure FastAPI is running on http://127.0.0.1:8000."
+      );
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -98,9 +149,9 @@ function SignupPage() {
             </h1>
 
             <p className="mt-6 max-w-2xl text-base leading-8 text-white/70">
-              Register your workspace before entering the dashboard. Real user
-              storage, password hashing, JWT tokens, and protected backend
-              authentication will be connected in Week 3.
+              Register your workspace before entering the dashboard. Your
+              account is now stored in PostgreSQL with backend validation and
+              password hashing.
             </p>
 
             <div className="mt-8 grid grid-cols-3 gap-3">
@@ -220,9 +271,10 @@ function SignupPage() {
 
                 <button
                   type="submit"
-                  className="w-full rounded-2xl border border-white/20 bg-white px-7 py-4 text-sm font-black text-slate-950 shadow-[0_25px_80px_rgba(255,255,255,0.25)] transition hover:-translate-y-1 hover:bg-slate-100"
+                  disabled={isLoading}
+                  className="w-full rounded-2xl border border-white/20 bg-white px-7 py-4 text-sm font-black text-slate-950 shadow-[0_25px_80px_rgba(255,255,255,0.25)] transition hover:-translate-y-1 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0"
                 >
-                  Create Account
+                  {isLoading ? "Creating Account..." : "Create Account"}
                 </button>
 
                 <button
@@ -234,10 +286,9 @@ function SignupPage() {
                 </button>
               </div>
 
-              <div className="mt-6 rounded-2xl border border-amber-300/20 bg-amber-300/10 p-4 text-sm leading-6 text-amber-100">
-                Temporary note: signup currently uses frontend validation and
-                local storage only. Real database registration will be added in
-                Week 3.
+              <div className="mt-6 rounded-2xl border border-emerald-300/20 bg-emerald-300/10 p-4 text-sm leading-6 text-emerald-100">
+                Signup is now connected to the real FastAPI backend. After
+                account creation, continue to login.
               </div>
             </form>
           </div>
