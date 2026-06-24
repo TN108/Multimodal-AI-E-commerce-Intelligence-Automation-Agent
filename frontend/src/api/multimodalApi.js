@@ -6,6 +6,22 @@ const apiClient = axios.create({
   baseURL: API_BASE_URL,
 });
 
+function getToken() {
+  return localStorage.getItem("token");
+}
+
+function getAuthHeaders() {
+  const token = getToken();
+
+  if (!token) {
+    return {};
+  }
+
+  return {
+    Authorization: `Bearer ${token}`,
+  };
+}
+
 const QUERY_EXPANSIONS = {
   shoe: "shoes sneakers footwear trainers running shoes athletic shoes sports shoes",
   shoes: "shoes sneakers footwear trainers running shoes athletic shoes sports shoes",
@@ -81,6 +97,11 @@ export async function searchByText(query) {
   const response = await apiClient.get("/api/v1/multimodal/search/text", {
     params: {
       query: expandedQuery,
+      min_score: 0.2,
+      limit: 10,
+    },
+    headers: {
+      ...getAuthHeaders(),
     },
   });
 
@@ -95,8 +116,12 @@ export async function searchByImage(file) {
     "/api/v1/multimodal/search/image",
     formData,
     {
+      params: {
+        min_score: 0.2,
+        limit: 10,
+      },
       headers: {
-        "Content-Type": "multipart/form-data",
+        ...getAuthHeaders(),
       },
     }
   );
@@ -113,7 +138,7 @@ export async function analyzeAndSaveProduct(file) {
     formData,
     {
       headers: {
-        "Content-Type": "multipart/form-data",
+        ...getAuthHeaders(),
       },
     }
   );
@@ -122,6 +147,11 @@ export async function analyzeAndSaveProduct(file) {
 }
 
 export async function getProducts() {
-  const response = await apiClient.get("/api/v1/products/");
+  const response = await apiClient.get("/api/v1/products/", {
+    headers: {
+      ...getAuthHeaders(),
+    },
+  });
+
   return response.data;
 }

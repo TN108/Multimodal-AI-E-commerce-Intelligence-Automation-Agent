@@ -1,4 +1,4 @@
-export const MIN_SCORE = 0.5;
+export const MIN_SCORE = 0.2;
 
 export function getResultsArray(data) {
   if (Array.isArray(data)) {
@@ -149,14 +149,15 @@ function getDuplicateKey(product) {
   const name = getProductName(product);
   const category = getProductCategory(product);
   const productType = analysis?.product_type || payload?.product_type || "";
-  const style = analysis?.style || "";
+  const style = analysis?.style || payload?.style || "";
   const colors = Array.isArray(analysis?.colors)
     ? analysis.colors.join(" ")
-    : analysis?.colors || "";
+    : analysis?.colors || payload?.colors || "";
   const description =
     analysis?.short_description ||
     payload?.short_description ||
     payload?.description ||
+    product?.description ||
     "";
 
   return normalizeText(

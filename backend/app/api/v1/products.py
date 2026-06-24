@@ -11,7 +11,9 @@ from app.schemas.product import (
 )
 from app.services.product_service import search_products_service
 from app.services.vlm_service import analyze_product_image
+from app.services.qdrant_service import insert_product
 from app.utils.auth_dependencies import get_current_user
+from app.utils.embeddings import generate_embedding
 
 
 router = APIRouter()
@@ -160,6 +162,21 @@ async def analyze_and_save_product(
         f"Search tags: {tag_text}."
     ).strip()
 
+    search_text = " ".join(
+        [
+            product_name,
+            category,
+            gender,
+            style,
+            material_guess,
+            color_text,
+            feature_text,
+            tag_text,
+            short_description,
+            description,
+        ]
+    ).strip()
+
     new_product = Product(
         name=product_name,
         description=description,
@@ -173,11 +190,43 @@ async def analyze_and_save_product(
     db.commit()
     db.refresh(new_product)
 
+    embedding = generate_embedding(search_text)
+
+    qdrant_point_id = new_product.id
+
+    qdrant_payload = {
+        "user_id": current_user.id,
+        "product_id": new_product.id,
+        "name": new_product.name,
+        "category": new_product.category,
+        "description": new_product.description,
+        "search_text": search_text,
+        "product_type": product_type,
+        "gender": gender,
+        "style": style,
+        "material_guess": material_guess,
+        "colors": colors,
+        "visible_features": visible_features,
+        "search_tags": search_tags,
+    }
+
+    insert_product(
+        product_id=qdrant_point_id,
+        vector=embedding,
+        payload=qdrant_payload,
+    )
+
+    new_product.qdrant_point_id = str(qdrant_point_id)
+
+    db.commit()
+    db.refresh(new_product)
+
     return {
         "message": "Product analyzed and saved successfully",
         "filename": file.filename,
         "content_type": file.content_type,
         "vlm_analysis": analysis,
+        "search_text": search_text,
         "saved_product": {
             "id": new_product.id,
             "name": new_product.name,

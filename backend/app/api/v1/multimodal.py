@@ -1,8 +1,10 @@
 import inspect
 
-from fastapi import APIRouter, UploadFile, File, Query, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 
+from app.models.user import User
 from app.services.vlm_service import analyze_product_image
+from app.utils.auth_dependencies import get_current_user
 from app.utils.embeddings import generate_embedding
 from app.services.qdrant_service import search_products
 
@@ -71,11 +73,6 @@ def safe_text(value) -> str:
     - lists
     - dictionaries
     - nested lists/dictionaries
-
-    Example:
-    {"feature": "Shape", "description": "Round and saddle-like"}
-    becomes:
-    "Shape Round and saddle-like"
     """
     if value is None:
         return ""
@@ -91,6 +88,7 @@ def safe_text(value) -> str:
 
         for item in value:
             item_text = safe_text(item)
+
             if item_text:
                 cleaned_items.append(item_text)
 
@@ -101,6 +99,7 @@ def safe_text(value) -> str:
 
         for dict_value in value.values():
             item_text = safe_text(dict_value)
+
             if item_text:
                 cleaned_items.append(item_text)
 
@@ -149,10 +148,11 @@ def get_result_payload(result) -> dict:
 
 def filter_results_by_score(results, min_score: float):
     """
-    Remove weak / irrelevant vector search matches using similarity score.
+    Removes weak / irrelevant vector search matches using similarity score.
     """
     return [
-        result for result in results
+        result
+        for result in results
         if get_result_score(result) >= min_score
     ]
 
@@ -163,16 +163,7 @@ def filter_results_by_score_and_category(
     category: str | None = None,
 ):
     """
-    Remove weak matches and optionally keep only products from the detected category.
-
-    Uses category normalization.
-
-    Example:
-    VLM category: "Sneakers"
-    Product category in Qdrant: "Footwear"
-
-    Both become:
-    "footwear"
+    Removes weak matches and optionally keeps only products from the detected category.
     """
     filtered = []
 
@@ -216,8 +207,6 @@ def get_analysis_from_vlm_result(vlm_result) -> dict:
 def build_search_text_from_vlm_result(vlm_result) -> str:
     """
     Converts VLM output into clean searchable text for embedding generation.
-
-    This prevents raw dictionaries from appearing in search_text.
     """
     analysis = get_analysis_from_vlm_result(vlm_result)
 
@@ -297,18 +286,37 @@ async def run_image_analysis(file: UploadFile):
 @router.get("/search/text")
 async def search_by_text(
     query: str = Query(..., description="Customer product search query"),
-    limit: int = Query(5, ge=1, le=50, description="Number of similar products to return"),
-    min_score: float = Query(0.30, ge=0, le=1, description="Minimum similarity score"),
+    limit: int = Query(
+        5,
+        ge=1,
+        le=50,
+        description="Number of similar products to return",
+    ),
+    min_score: float = Query(
+        0.30,
+        ge=0,
+        le=1,
+        description="Minimum similarity score",
+    ),
+    current_user: User = Depends(get_current_user),
 ):
     query_embedding = generate_embedding(query)
 
-    results = search_products(query_embedding, limit)
+    results = search_products(
+        vector=query_embedding,
+        limit=limit,
+        user_id=current_user.id,
+    )
 
-    filtered_results = filter_results_by_score(results, min_score)
+    filtered_results = filter_results_by_score(
+        results=results,
+        min_score=min_score,
+    )
 
     return {
         "search_type": "text",
         "query": query,
+        "user_id": current_user.id,
         "min_score": min_score,
         "results": filtered_results,
         "message": "Products found" if filtered_results else "No relevant products found",
@@ -318,8 +326,19 @@ async def search_by_text(
 @router.post("/search/image")
 async def search_by_image(
     file: UploadFile = File(...),
-    limit: int = Query(5, ge=1, le=50, description="Number of similar products to return"),
-    min_score: float = Query(0.30, ge=0, le=1, description="Minimum similarity score"),
+    limit: int = Query(
+        5,
+        ge=1,
+        le=50,
+        description="Number of similar products to return",
+    ),
+    min_score: float = Query(
+        0.30,
+        ge=0,
+        le=1,
+        description="Minimum similarity score",
+    ),
+    current_user: User = Depends(get_current_user),
 ):
     vlm_result = await run_image_analysis(file)
 
@@ -335,7 +354,11 @@ async def search_by_image(
 
     search_limit = limit * 3
 
-    results = search_products(query_embedding, search_limit)
+    results = search_products(
+        vector=query_embedding,
+        limit=search_limit,
+        user_id=current_user.id,
+    )
 
     analysis = get_analysis_from_vlm_result(vlm_result)
 
@@ -357,6 +380,7 @@ async def search_by_image(
 
     return {
         "search_type": "image",
+        "user_id": current_user.id,
         "vlm_analysis": vlm_result,
         "search_text": search_text,
         "detected_category": detected_category,
