@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -8,6 +8,7 @@ from app.schemas.product import (
     ProductCreateRequest,
     ProductResponse,
     ProductSearch,
+    ProductUpdate,
 )
 from app.services.product_service import search_products_service
 from app.services.vlm_service import analyze_product_image
@@ -17,6 +18,32 @@ from app.utils.embeddings import generate_embedding
 
 
 router = APIRouter()
+
+
+def get_user_product_or_404(product_id: int, db: Session, current_user: User):
+    """
+    Finds a product by ID and checks whether it belongs to the logged-in user.
+
+    Rules:
+    - If product does not exist, return 404.
+    - If product belongs to another user, return 403.
+    - If product belongs to current user, return product.
+    """
+    product = db.query(Product).filter(Product.id == product_id).first()
+
+    if not product:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Product not found",
+        )
+
+    if product.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You are not allowed to access this product",
+        )
+
+    return product
 
 
 def safe_join(value) -> str:
@@ -237,4 +264,60 @@ async def analyze_and_save_product(
             "user_id": new_product.user_id,
             "created_at": new_product.created_at,
         },
+    }
+
+
+@router.get(
+    "/{product_id}",
+    response_model=ProductResponse,
+)
+def get_product_by_id(
+    product_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    product = get_user_product_or_404(product_id, db, current_user)
+    return product
+
+
+@router.put(
+    "/{product_id}",
+    response_model=ProductResponse,
+)
+def update_product(
+    product_id: int,
+    product_data: ProductUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    product = get_user_product_or_404(product_id, db, current_user)
+
+    update_data = product_data.model_dump(exclude_unset=True)
+
+    for key, value in update_data.items():
+        if isinstance(value, str):
+            value = value.strip()
+
+        setattr(product, key, value)
+
+    db.commit()
+    db.refresh(product)
+
+    return product
+
+
+@router.delete("/{product_id}")
+def delete_product(
+    product_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    product = get_user_product_or_404(product_id, db, current_user)
+
+    db.delete(product)
+    db.commit()
+
+    return {
+        "message": "Product deleted successfully",
+        "product_id": product_id,
     }

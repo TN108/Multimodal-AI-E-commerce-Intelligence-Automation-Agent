@@ -12,8 +12,15 @@ class ProductCreateRequest(BaseModel):
     qdrant_point_id: Optional[str] = Field(default=None, max_length=255)
 
 
+class ProductUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=255)
+    category: Optional[str] = Field(default=None, max_length=100)
+    description: Optional[str] = None
+
+
 class ProductSearch(BaseModel):
-    query: str
+    query: str = Field(..., min_length=1)
+    limit: int = Field(default=5, ge=1, le=20)
 
 
 class ProductResponse(BaseModel):
