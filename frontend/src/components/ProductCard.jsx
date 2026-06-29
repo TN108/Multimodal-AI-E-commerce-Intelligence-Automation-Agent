@@ -8,7 +8,7 @@ import {
   getProductScore,
 } from "../utils/productHelpers";
 
-function ProductCard({ product }) {
+function ProductCard({ product, onEdit, onDelete, showActions = false }) {
   const analysis = getAnalysis(product);
 
   return (
@@ -52,6 +52,26 @@ function ProductCard({ product }) {
           </span>
         )}
       </div>
+
+      {showActions && (
+        <div className="mt-5 flex flex-wrap gap-3 border-t border-white/30 pt-4">
+          <button
+            type="button"
+            onClick={() => onEdit?.(product)}
+            className="rounded-xl border border-slate-300/70 bg-white/55 px-4 py-2 text-sm font-black text-slate-800 shadow-sm ring-1 ring-white/40 backdrop-blur-xl transition hover:bg-white/80"
+          >
+            Edit
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onDelete?.(product)}
+            className="rounded-xl border border-red-300/70 bg-red-100/70 px-4 py-2 text-sm font-black text-red-700 shadow-sm ring-1 ring-white/40 backdrop-blur-xl transition hover:bg-red-200/80"
+          >
+            Delete
+          </button>
+        </div>
+      )}
 
       <RawJsonViewer title="View technical result" data={product} />
     </div>

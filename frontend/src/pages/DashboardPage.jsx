@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { searchByText, searchByImage } from "../api/multimodalApi";
+import { updateProduct, deleteProduct } from "../api/productApi";
 
 import GlassCard, { Field } from "../components/GlassCard";
 import ProductAnalysisCard from "../components/ProductAnalysisCard";
@@ -90,6 +91,15 @@ function DashboardPage() {
   const [saveLoading, setSaveLoading] = useState(false);
 
   const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+
+  const [editingProduct, setEditingProduct] = useState(null);
+  const [editForm, setEditForm] = useState({
+    name: "",
+    category: "",
+    description: "",
+  });
+
   const [currentSlide, setCurrentSlide] = useState(0);
 
   const activeSlide = HERO_SLIDES[currentSlide];
@@ -209,17 +219,20 @@ function DashboardPage() {
   const openAddSection = () => {
     setActiveSection("add");
     setError("");
+    setMessage("");
   };
 
   const openCatalogSection = async () => {
     setActiveSection("catalog");
     setError("");
+    setMessage("");
     await handleRefreshCatalog();
   };
 
   const openSearchSection = () => {
     setActiveSection("search");
     setError("");
+    setMessage("");
   };
 
   const getSaveAnalysis = () => {
@@ -230,6 +243,7 @@ function DashboardPage() {
     const file = event.target.files?.[0];
 
     setError("");
+    setMessage("");
     setSaveResult(null);
 
     if (!file) {
@@ -253,6 +267,7 @@ function DashboardPage() {
     const file = event.target.files?.[0];
 
     setError("");
+    setMessage("");
 
     if (!file) {
       setSelectedFile(null);
@@ -287,6 +302,7 @@ function DashboardPage() {
     setActiveSection("add");
     setSaveLoading(true);
     setError("");
+    setMessage("");
     setSaveResult(null);
 
     try {
@@ -321,6 +337,7 @@ function DashboardPage() {
       console.log("Analyze and save response:", data);
 
       setSaveResult(data);
+      setMessage("Product has been analyzed and saved successfully.");
       await handleRefreshCatalog();
     } catch (error) {
       console.error("Analyze and save failed:", error);
@@ -342,6 +359,7 @@ function DashboardPage() {
     setActiveSection("search");
     setSearchLoading(true);
     setError("");
+    setMessage("");
     setVlmAnalysis(null);
     setResults([]);
 
@@ -373,6 +391,7 @@ function DashboardPage() {
     setActiveSection("search");
     setSearchLoading(true);
     setError("");
+    setMessage("");
     setVlmAnalysis(null);
     setResults([]);
 
@@ -393,6 +412,108 @@ function DashboardPage() {
       setError(backendMessage);
     } finally {
       setSearchLoading(false);
+    }
+  };
+
+  const handleEditClick = (product) => {
+    setActiveSection("catalog");
+    setEditingProduct(product);
+
+    setEditForm({
+      name: product?.name || "",
+      category: product?.category || "",
+      description: product?.description || "",
+    });
+
+    setMessage("");
+    setError("");
+  };
+
+  const handleCancelEdit = () => {
+    setEditingProduct(null);
+
+    setEditForm({
+      name: "",
+      category: "",
+      description: "",
+    });
+
+    setError("");
+  };
+
+  const handleUpdateProduct = async (event) => {
+    event.preventDefault();
+
+    if (!editingProduct) {
+      return;
+    }
+
+    if (!editForm.name.trim()) {
+      setError("Product name is required.");
+      return;
+    }
+
+    setError("");
+    setMessage("");
+
+    try {
+      await updateProduct(editingProduct.id, {
+        name: editForm.name.trim(),
+        category: editForm.category.trim() || null,
+        description: editForm.description.trim() || null,
+      });
+
+      setMessage("Product updated successfully.");
+      setEditingProduct(null);
+
+      setEditForm({
+        name: "",
+        category: "",
+        description: "",
+      });
+
+      await handleRefreshCatalog();
+    } catch (error) {
+      console.error("Product update failed:", error);
+
+      const backendMessage =
+        error.response?.data?.detail ||
+        "Failed to update product. Please try again.";
+
+      setError(backendMessage);
+    }
+  };
+
+  const handleDeleteProduct = async (product) => {
+    const confirmed = window.confirm(
+      `Are you sure you want to delete "${product?.name || "this product"}"?`
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setError("");
+    setMessage("");
+
+    try {
+      await deleteProduct(product.id);
+
+      setMessage("Product deleted successfully.");
+
+      if (editingProduct?.id === product.id) {
+        setEditingProduct(null);
+      }
+
+      await handleRefreshCatalog();
+    } catch (error) {
+      console.error("Product delete failed:", error);
+
+      const backendMessage =
+        error.response?.data?.detail ||
+        "Failed to delete product. Please try again.";
+
+      setError(backendMessage);
     }
   };
 
@@ -571,6 +692,12 @@ function DashboardPage() {
           </div>
         </GlassCard>
 
+        {message && (
+          <div className="mb-8 rounded-3xl border border-emerald-200/70 bg-emerald-100/45 p-4 text-sm font-bold text-emerald-800 shadow-sm ring-1 ring-white/30 backdrop-blur-2xl">
+            {message}
+          </div>
+        )}
+
         {error && (
           <div className="mb-8 rounded-3xl border border-rose-200/70 bg-rose-100/45 p-4 text-sm font-bold text-rose-800 shadow-sm ring-1 ring-white/30 backdrop-blur-2xl">
             {error}
@@ -738,11 +865,108 @@ function DashboardPage() {
         )}
 
         {activeSection === "catalog" && (
-          <CatalogSection
-            products={catalogProducts}
-            catalogLoading={catalogLoading}
-            onRefreshCatalog={handleRefreshCatalog}
-          />
+          <>
+            {editingProduct && (
+              <GlassCard className="mb-8">
+                <div className="mb-5">
+                  <p className="text-xs font-black uppercase tracking-[0.28em] text-indigo-500">
+                    Product Management
+                  </p>
+
+                  <h2 className="mt-2 text-3xl font-black text-slate-950">
+                    Edit Product
+                  </h2>
+
+                  <p className="mt-2 text-sm leading-6 text-slate-700">
+                    Update the product name, category, or description. Changes
+                    are saved to your authenticated catalog.
+                  </p>
+                </div>
+
+                <form onSubmit={handleUpdateProduct} className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-black text-slate-700">
+                      Product Name
+                    </label>
+
+                    <input
+                      type="text"
+                      value={editForm.name}
+                      onChange={(event) =>
+                        setEditForm({
+                          ...editForm,
+                          name: event.target.value,
+                        })
+                      }
+                      className="mt-2 w-full rounded-2xl border border-white/40 bg-white/35 px-4 py-3 text-sm font-semibold text-slate-900 outline-none ring-1 ring-white/30 backdrop-blur-2xl placeholder:text-slate-500 focus:border-indigo-300/80 focus:bg-white/45 focus:ring-4 focus:ring-indigo-200/45"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-black text-slate-700">
+                      Category
+                    </label>
+
+                    <input
+                      type="text"
+                      value={editForm.category}
+                      onChange={(event) =>
+                        setEditForm({
+                          ...editForm,
+                          category: event.target.value,
+                        })
+                      }
+                      className="mt-2 w-full rounded-2xl border border-white/40 bg-white/35 px-4 py-3 text-sm font-semibold text-slate-900 outline-none ring-1 ring-white/30 backdrop-blur-2xl placeholder:text-slate-500 focus:border-indigo-300/80 focus:bg-white/45 focus:ring-4 focus:ring-indigo-200/45"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-black text-slate-700">
+                      Description
+                    </label>
+
+                    <textarea
+                      value={editForm.description}
+                      onChange={(event) =>
+                        setEditForm({
+                          ...editForm,
+                          description: event.target.value,
+                        })
+                      }
+                      rows="5"
+                      className="mt-2 w-full rounded-2xl border border-white/40 bg-white/35 px-4 py-3 text-sm font-semibold text-slate-900 outline-none ring-1 ring-white/30 backdrop-blur-2xl placeholder:text-slate-500 focus:border-indigo-300/80 focus:bg-white/45 focus:ring-4 focus:ring-indigo-200/45"
+                    />
+                  </div>
+
+                  <div className="flex flex-wrap gap-3 pt-2">
+                    <button
+                      type="submit"
+                      className="rounded-2xl border border-indigo-300/50 bg-indigo-500/85 px-6 py-3 text-sm font-black text-white shadow-lg shadow-indigo-300/40 ring-1 ring-white/30 backdrop-blur-xl transition hover:bg-indigo-600/90"
+                    >
+                      Save Changes
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleCancelEdit}
+                      className="rounded-2xl border border-slate-300/70 bg-white/55 px-6 py-3 text-sm font-black text-slate-700 shadow-sm ring-1 ring-white/40 backdrop-blur-xl transition hover:bg-white/80"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              </GlassCard>
+            )}
+
+            <CatalogSection
+              products={catalogProducts}
+              catalogLoading={catalogLoading}
+              onRefreshCatalog={handleRefreshCatalog}
+              onEdit={handleEditClick}
+              onDelete={handleDeleteProduct}
+            />
+          </>
         )}
 
         {activeSection === "search" && (
