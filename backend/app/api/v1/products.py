@@ -1,3 +1,5 @@
+import inspect
+
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
@@ -12,12 +14,151 @@ from app.schemas.product import (
 )
 from app.services.product_service import search_products_service
 from app.services.vlm_service import analyze_product_image
-from app.services.qdrant_service import insert_product
+from app.services.qdrant_service import insert_product, delete_product_from_qdrant
 from app.utils.auth_dependencies import get_current_user
 from app.utils.embeddings import generate_embedding
 
 
 router = APIRouter()
+
+
+UNSUPPORTED_PRODUCT_MESSAGE = (
+    "We do not currently support this type of product. "
+    "Please upload a fashion-related product such as clothing, shoes, "
+    "jewelry, bags, or accessories."
+)
+
+
+SUPPORTED_SPECIFIC_PRODUCT_KEYWORDS = {
+    # Footwear
+    "shoe",
+    "shoes",
+    "sneaker",
+    "sneakers",
+    "footwear",
+    "trainer",
+    "trainers",
+    "boot",
+    "boots",
+    "sandal",
+    "sandals",
+    "heel",
+    "heels",
+
+    # Bags and accessories
+    "bag",
+    "bags",
+    "handbag",
+    "handbags",
+    "purse",
+    "wallet",
+    "belt",
+    "watch",
+    "sunglasses",
+    "accessory",
+    "accessories",
+
+    # Jewelry / jewellery
+    "jewelry",
+    "jewellery",
+    "necklace",
+    "earring",
+    "earrings",
+    "bracelet",
+    "ring",
+    "rings",
+
+    # Clothing items
+    "dress",
+    "dresses",
+    "shirt",
+    "shirts",
+    "tshirt",
+    "t-shirt",
+    "t-shirts",
+    "top",
+    "tops",
+    "blouse",
+    "jacket",
+    "jackets",
+    "coat",
+    "coats",
+    "hoodie",
+    "sweater",
+    "pants",
+    "trousers",
+    "jeans",
+    "short",
+    "shorts",
+    "skirt",
+    "skirts",
+    "bikini",
+    "swimwear",
+    "swimsuit",
+
+    # South Asian fashion
+    "kurta",
+    "shalwar",
+    "kameez",
+    "saree",
+    "sari",
+    "dupatta",
+    "lehenga",
+}
+
+
+UNSUPPORTED_PRODUCT_KEYWORDS = {
+    # Food / fruit
+    "fruit",
+    "food",
+    "strawberry",
+    "apple",
+    "banana",
+    "orange",
+    "mango",
+    "vegetable",
+    "drink",
+    "beverage",
+
+    # Animals
+    "animal",
+    "dog",
+    "cat",
+    "bird",
+    "horse",
+    "cow",
+    "goat",
+
+    # Vehicles
+    "vehicle",
+    "car",
+    "bike",
+    "bicycle",
+    "motorcycle",
+    "truck",
+    "bus",
+
+    # Electronics
+    "phone",
+    "mobile",
+    "laptop",
+    "computer",
+    "keyboard",
+    "mouse",
+    "electronics",
+    "camera",
+
+    # Other unsupported objects
+    "furniture",
+    "chair",
+    "table",
+    "sofa",
+    "plant",
+    "tree",
+    "flower",
+    "building",
+    "room",
+}
 
 
 def get_user_product_or_404(product_id: int, db: Session, current_user: User):
@@ -80,6 +221,154 @@ def safe_join(value) -> str:
     return str(value)
 
 
+def validate_supported_product(analysis: dict):
+    """
+    Rejects unsupported uploads before saving to PostgreSQL or Qdrant.
+
+    Supported:
+    - clothing items
+    - shoes / footwear
+    - bags
+    - jewelry / jewellery
+    - fashion accessories
+
+    Unsupported:
+    - fruit / food
+    - animals
+    - vehicles
+    - electronics
+    - furniture
+    - random objects
+    """
+    if not isinstance(analysis, dict):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=UNSUPPORTED_PRODUCT_MESSAGE,
+        )
+
+    explicit_supported_flag = analysis.get("is_supported_product")
+    explicit_fashion_flag = analysis.get("is_fashion_product")
+
+    if explicit_supported_flag is False or explicit_fashion_flag is False:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=UNSUPPORTED_PRODUCT_MESSAGE,
+        )
+
+    product_type = safe_join(analysis.get("product_type", "")).lower()
+    category = safe_join(analysis.get("category", "")).lower()
+    gender = safe_join(analysis.get("gender", "")).lower()
+    style = safe_join(analysis.get("style", "")).lower()
+    material_guess = safe_join(analysis.get("material_guess", "")).lower()
+    colors = safe_join(analysis.get("colors", "")).lower()
+    visible_features = safe_join(analysis.get("visible_features", "")).lower()
+    search_tags = safe_join(analysis.get("search_tags", "")).lower()
+    short_description = safe_join(analysis.get("short_description", "")).lower()
+    description = safe_join(analysis.get("description", "")).lower()
+
+    combined_text = " ".join(
+        [
+            product_type,
+            category,
+            gender,
+            style,
+            material_guess,
+            colors,
+            visible_features,
+            search_tags,
+            short_description,
+            description,
+        ]
+    ).lower()
+
+    for blocked_word in UNSUPPORTED_PRODUCT_KEYWORDS:
+        if blocked_word in combined_text:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=UNSUPPORTED_PRODUCT_MESSAGE,
+            )
+
+    has_supported_product_keyword = any(
+        supported_word in combined_text
+        for supported_word in SUPPORTED_SPECIFIC_PRODUCT_KEYWORDS
+    )
+
+    if not has_supported_product_keyword:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=UNSUPPORTED_PRODUCT_MESSAGE,
+        )
+
+
+def normalize_qdrant_point_id(point_id):
+    """
+    Qdrant point IDs may be integers or UUID strings.
+
+    In this project, we insert product vectors using the PostgreSQL product ID.
+    That ID is an integer, but qdrant_point_id is stored in PostgreSQL as a string.
+    So before deleting/updating Qdrant, convert numeric strings back to int.
+    """
+    if point_id is None:
+        return None
+
+    point_id = str(point_id)
+
+    if point_id.isdigit():
+        return int(point_id)
+
+    return point_id
+
+
+def build_search_text_from_product(product: Product) -> str:
+    """
+    Builds searchable text from the current PostgreSQL product data.
+
+    Used when syncing updated product data back into Qdrant.
+    """
+    parts = [
+        product.name,
+        product.category,
+        product.description,
+    ]
+
+    return " ".join(str(part) for part in parts if part).strip()
+
+
+def sync_product_to_qdrant(product: Product):
+    """
+    Inserts or updates the product vector in Qdrant.
+
+    This keeps Qdrant synchronized with PostgreSQL after product updates.
+    """
+    search_text = build_search_text_from_product(product)
+
+    if not search_text:
+        return
+
+    embedding = generate_embedding(search_text)
+
+    qdrant_point_id = product.qdrant_point_id or str(product.id)
+    normalized_point_id = normalize_qdrant_point_id(qdrant_point_id)
+
+    payload = {
+        "user_id": product.user_id,
+        "product_id": product.id,
+        "name": product.name,
+        "category": product.category,
+        "description": product.description,
+        "image_url": product.image_url,
+        "search_text": search_text,
+    }
+
+    insert_product(
+        product_id=normalized_point_id,
+        vector=embedding,
+        payload=payload,
+    )
+
+    product.qdrant_point_id = str(qdrant_point_id)
+
+
 @router.get(
     "/",
     response_model=list[ProductResponse],
@@ -112,7 +401,7 @@ def create_product(
         category=product.category,
         description=product.description,
         image_url=product.image_url,
-        qdrant_point_id=product.qdrant_point_id,
+        qdrant_point_id=None,
         user_id=current_user.id,
     )
 
@@ -120,14 +409,23 @@ def create_product(
     db.commit()
     db.refresh(new_product)
 
+    sync_product_to_qdrant(new_product)
+
+    db.commit()
+    db.refresh(new_product)
+
     return new_product
 
 
 @router.post("/search")
-def search_products(product_search: ProductSearch):
+def search_products(
+    product_search: ProductSearch,
+    current_user: User = Depends(get_current_user),
+):
     return search_products_service(
         query=product_search.query,
         limit=product_search.limit,
+        user_id=current_user.id,
     )
 
 
@@ -141,7 +439,7 @@ async def analyze_and_save_product(
 
     if file.content_type not in allowed_types:
         raise HTTPException(
-            status_code=400,
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail="Only JPEG, PNG, and WEBP images are allowed",
         )
 
@@ -149,17 +447,28 @@ async def analyze_and_save_product(
 
     if len(image_bytes) == 0:
         raise HTTPException(
-            status_code=400,
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail="Uploaded file is empty",
         )
 
-    analysis = await analyze_product_image(image_bytes)
+    analysis = analyze_product_image(image_bytes)
+
+    if inspect.isawaitable(analysis):
+        analysis = await analysis
+
+    if not isinstance(analysis, dict):
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="VLM did not return a valid dictionary response",
+        )
 
     if "error" in analysis:
         raise HTTPException(
-            status_code=500,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=analysis,
         )
+
+    validate_supported_product(analysis)
 
     product_type = str(analysis.get("product_type", "Unknown Product"))
     category = str(analysis.get("category", "Uncategorized"))
@@ -294,11 +603,22 @@ def update_product(
 
     update_data = product_data.model_dump(exclude_unset=True)
 
+    if not update_data:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No update data provided",
+        )
+
     for key, value in update_data.items():
         if isinstance(value, str):
             value = value.strip()
 
         setattr(product, key, value)
+
+    db.commit()
+    db.refresh(product)
+
+    sync_product_to_qdrant(product)
 
     db.commit()
     db.refresh(product)
@@ -313,6 +633,10 @@ def delete_product(
     current_user: User = Depends(get_current_user),
 ):
     product = get_user_product_or_404(product_id, db, current_user)
+
+    if product.qdrant_point_id:
+        qdrant_point_id = normalize_qdrant_point_id(product.qdrant_point_id)
+        delete_product_from_qdrant(qdrant_point_id)
 
     db.delete(product)
     db.commit()

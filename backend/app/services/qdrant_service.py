@@ -4,6 +4,7 @@ from qdrant_client.models import (
     FieldCondition,
     Filter,
     MatchValue,
+    PointIdsList,
     PointStruct,
     VectorParams,
 )
@@ -15,6 +16,9 @@ client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
 
 
 def create_collection_if_not_exists():
+    """
+    Creates the Qdrant collection if it does not already exist.
+    """
     if client.collection_exists(collection_name=COLLECTION_NAME):
         return
 
@@ -116,3 +120,37 @@ def search_products(vector: list, limit: int = 5, user_id: int | None = None):
     )
 
     return response.points
+
+
+def delete_product_from_qdrant(product_id: str):
+    """
+    Deletes one product vector from Qdrant by Qdrant point ID.
+
+    This is needed when a product is deleted from PostgreSQL.
+    Otherwise, deleted products can still appear in semantic search.
+    """
+    if not product_id:
+        return
+
+    create_collection_if_not_exists()
+
+    client.delete(
+        collection_name=COLLECTION_NAME,
+        points_selector=PointIdsList(
+            points=[product_id],
+        ),
+    )
+
+
+def delete_user_products_from_qdrant(user_id: int):
+    """
+    Deletes all Qdrant vectors for one user.
+
+    This is optional, but useful for cleanup/testing.
+    """
+    create_collection_if_not_exists()
+
+    client.delete(
+        collection_name=COLLECTION_NAME,
+        points_selector=build_user_filter(user_id),
+    )

@@ -7,9 +7,13 @@ from app.services.vlm_service import analyze_product_image
 from app.utils.auth_dependencies import get_current_user
 from app.utils.embeddings import generate_embedding
 from app.services.qdrant_service import search_products
+from app.services.product_service import expand_query
 
 
 router = APIRouter(prefix="/multimodal", tags=["Multimodal Search"])
+
+
+DEFAULT_MIN_SCORE = 0.40
 
 
 CATEGORY_ALIASES = {
@@ -44,6 +48,7 @@ CATEGORY_ALIASES = {
     # Clothing
     "clothing": "clothing",
     "apparel": "clothing",
+    "casual wear": "clothing",
     "dress": "clothing",
     "dresses": "clothing",
     "shirt": "clothing",
@@ -58,14 +63,22 @@ CATEGORY_ALIASES = {
     "pants": "clothing",
     "trousers": "clothing",
     "jeans": "clothing",
+    "short": "clothing",
+    "shorts": "clothing",
     "skirt": "clothing",
     "skirts": "clothing",
+
+    # Swimwear
+    "swimwear": "swimwear",
+    "bikini": "swimwear",
+    "swimsuit": "swimwear",
+    "beachwear": "swimwear",
 }
 
 
 def safe_text(value) -> str:
     """
-    Converts VLM output into clean text.
+    Converts any value into clean text.
 
     Handles:
     - strings
@@ -117,6 +130,7 @@ def normalize_category(value) -> str:
     "Shoes" -> "footwear"
     "Handbag" -> "accessories"
     "Dress" -> "clothing"
+    "Shorts" -> "clothing"
     """
     text = safe_text(value).strip().lower()
 
@@ -144,6 +158,49 @@ def get_result_payload(result) -> dict:
         return result.get("payload", {}) or {}
 
     return getattr(result, "payload", {}) or {}
+
+
+def build_match_reason(payload: dict) -> str:
+    """
+    Builds a short explanation for why this product may have matched.
+    """
+    reasons = []
+
+    name = payload.get("name")
+    category = payload.get("category")
+    description = payload.get("description")
+    search_text = payload.get("search_text")
+
+    if name:
+        reasons.append(f"Name: {name}")
+
+    if category:
+        reasons.append(f"Category: {category}")
+
+    if description:
+        reasons.append(f"Description: {description}")
+
+    if not reasons and search_text:
+        reasons.append(f"Search text: {search_text}")
+
+    if not reasons:
+        return "Matched using semantic similarity."
+
+    return " | ".join(reasons)
+
+
+def normalize_search_result(result) -> dict:
+    """
+    Converts Qdrant result into a clean frontend-friendly dictionary.
+    """
+    payload = get_result_payload(result)
+
+    return {
+        "score": get_result_score(result),
+        "payload": payload,
+        "product": payload,
+        "match_reason": build_match_reason(payload),
+    }
 
 
 def filter_results_by_score(results, min_score: float):
@@ -293,14 +350,24 @@ async def search_by_text(
         description="Number of similar products to return",
     ),
     min_score: float = Query(
-        0.30,
+        DEFAULT_MIN_SCORE,
         ge=0,
         le=1,
         description="Minimum similarity score",
     ),
     current_user: User = Depends(get_current_user),
 ):
-    query_embedding = generate_embedding(query)
+    clean_query = safe_text(query)
+
+    if not clean_query:
+        raise HTTPException(
+            status_code=400,
+            detail="Search query cannot be empty",
+        )
+
+    expanded_query = expand_query(clean_query)
+
+    query_embedding = generate_embedding(expanded_query)
 
     results = search_products(
         vector=query_embedding,
@@ -313,13 +380,20 @@ async def search_by_text(
         min_score=min_score,
     )
 
+    normalized_results = [
+        normalize_search_result(result)
+        for result in filtered_results
+    ]
+
     return {
         "search_type": "text",
-        "query": query,
+        "query": clean_query,
+        "expanded_query": expanded_query,
         "user_id": current_user.id,
         "min_score": min_score,
-        "results": filtered_results,
-        "message": "Products found" if filtered_results else "No relevant products found",
+        "count": len(normalized_results),
+        "results": normalized_results,
+        "message": "Products found" if normalized_results else "No relevant products found",
     }
 
 
@@ -333,7 +407,7 @@ async def search_by_image(
         description="Number of similar products to return",
     ),
     min_score: float = Query(
-        0.30,
+        DEFAULT_MIN_SCORE,
         ge=0,
         le=1,
         description="Minimum similarity score",
@@ -378,6 +452,11 @@ async def search_by_image(
 
     filtered_results = filtered_results[:limit]
 
+    normalized_results = [
+        normalize_search_result(result)
+        for result in filtered_results
+    ]
+
     return {
         "search_type": "image",
         "user_id": current_user.id,
@@ -386,6 +465,7 @@ async def search_by_image(
         "detected_category": detected_category,
         "normalized_detected_category": normalized_detected_category,
         "min_score": min_score,
-        "results": filtered_results,
-        "message": "Products found" if filtered_results else "No relevant products found",
+        "count": len(normalized_results),
+        "results": normalized_results,
+        "message": "Products found" if normalized_results else "No relevant products found",
     }
