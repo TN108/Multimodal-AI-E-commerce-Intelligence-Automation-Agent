@@ -1,4 +1,4 @@
-export const MIN_SCORE = 0.2;
+export const MIN_SCORE = 0.4;
 
 export function getResultsArray(data) {
   if (Array.isArray(data)) {
@@ -41,7 +41,7 @@ export function getResultsArray(data) {
 }
 
 export function getPayload(product) {
-  return product?.payload || product || {};
+  return product?.payload || product?.product || product || {};
 }
 
 export function getAnalysis(product) {
@@ -101,14 +101,54 @@ export function getProductDescription(product) {
   );
 }
 
-export function getProductScore(product) {
+export function getRawScore(product) {
   const score = product?.score ?? product?.similarity ?? product?.distance;
 
-  if (score === undefined || score === null) {
-    return "N/A";
+  if (score === undefined || score === null || Number.isNaN(Number(score))) {
+    return null;
   }
 
-  return Number(score).toFixed(3);
+  return Number(score);
+}
+
+export function getProductScore(product) {
+  const score = getRawScore(product);
+
+  if (score === null) {
+    return "Saved Product";
+  }
+
+  const percentage = Math.round(score * 100);
+
+  return `Match: ${percentage}%`;
+}
+
+export function getMatchLabel(product) {
+  const score = getRawScore(product);
+
+  if (score === null) {
+    return "Catalog Item";
+  }
+
+  if (score >= 0.6) {
+    return "Strong Match";
+  }
+
+  if (score >= 0.4) {
+    return "Good Match";
+  }
+
+  return "Weak Match";
+}
+
+export function getMatchReason(product) {
+  const payload = getPayload(product);
+
+  return (
+    product?.match_reason ||
+    payload?.match_reason ||
+    "Matched using semantic product similarity."
+  );
 }
 
 export function getColors(analysis) {
@@ -150,9 +190,11 @@ function getDuplicateKey(product) {
   const category = getProductCategory(product);
   const productType = analysis?.product_type || payload?.product_type || "";
   const style = analysis?.style || payload?.style || "";
+
   const colors = Array.isArray(analysis?.colors)
     ? analysis.colors.join(" ")
     : analysis?.colors || payload?.colors || "";
+
   const description =
     analysis?.short_description ||
     payload?.short_description ||
@@ -160,8 +202,17 @@ function getDuplicateKey(product) {
     product?.description ||
     "";
 
+  const productId =
+    payload?.product_id ||
+    payload?.postgres_id ||
+    payload?.id ||
+    product?.product_id ||
+    product?.postgres_id ||
+    product?.id ||
+    "";
+
   return normalizeText(
-    `${name} ${category} ${productType} ${style} ${colors} ${description}`
+    `${productId} ${name} ${category} ${productType} ${style} ${colors} ${description}`
   );
 }
 
@@ -188,13 +239,13 @@ export function filterStrongResults(data) {
   const results = getResultsArray(data);
 
   const strongResults = results.filter((product) => {
-    const score = product?.score ?? product?.similarity;
+    const score = getRawScore(product);
 
-    if (score === undefined || score === null) {
+    if (score === null) {
       return true;
     }
 
-    return Number(score) >= MIN_SCORE;
+    return score >= MIN_SCORE;
   });
 
   return removeDuplicateProducts(strongResults);

@@ -11,7 +11,6 @@ import RawJsonViewer from "../components/RawJsonViewer";
 import CatalogSection from "../components/CatalogSection";
 
 import {
-  MIN_SCORE,
   filterStrongResults,
   getColors,
   getSearchTags,
@@ -189,7 +188,7 @@ function DashboardPage() {
       if (!response.ok) {
         const message = await getBackendErrorMessage(
           response,
-          "Catalog refresh failed. Check backend, products API, and CORS."
+          "Catalog refresh failed. Please check the backend connection."
         );
 
         setError(message);
@@ -197,8 +196,6 @@ function DashboardPage() {
       }
 
       const data = await response.json();
-
-      console.log("Catalog products response:", data);
 
       if (Array.isArray(data)) {
         setCatalogProducts(data);
@@ -209,7 +206,7 @@ function DashboardPage() {
       console.error("Catalog refresh failed:", error);
 
       setError(
-        "Catalog refresh failed. Make sure FastAPI is running and the backend is reachable."
+        "Catalog refresh failed. Make sure the backend is running and reachable."
       );
     } finally {
       setCatalogLoading(false);
@@ -325,7 +322,7 @@ function DashboardPage() {
       if (!response.ok) {
         const message = await getBackendErrorMessage(
           response,
-          "Analyze and save failed. Check backend, database, AI service, and CORS."
+          "Analyze and save failed. Please upload a supported product image."
         );
 
         setError(message);
@@ -334,8 +331,6 @@ function DashboardPage() {
 
       const data = await response.json();
 
-      console.log("Analyze and save response:", data);
-
       setSaveResult(data);
       setMessage("Product has been analyzed and saved successfully.");
       await handleRefreshCatalog();
@@ -343,7 +338,7 @@ function DashboardPage() {
       console.error("Analyze and save failed:", error);
 
       setError(
-        "Analyze and save failed. Make sure FastAPI is running and the backend is reachable."
+        "Analyze and save failed. Make sure the backend and AI service are running."
       );
     } finally {
       setSaveLoading(false);
@@ -366,15 +361,13 @@ function DashboardPage() {
     try {
       const data = await searchByText(query);
 
-      console.log("Text search response:", data);
-
       setResults(filterStrongResults(data));
     } catch (error) {
       console.error("Text search failed:", error);
 
       const backendMessage =
         error.response?.data?.detail ||
-        "Text search failed. Check backend, database, and CORS.";
+        "Text search failed. Please check the backend connection.";
 
       setError(backendMessage);
     } finally {
@@ -398,8 +391,6 @@ function DashboardPage() {
     try {
       const data = await searchByImage(selectedFile);
 
-      console.log("Image search response:", data);
-
       setVlmAnalysis(data?.vlm_analysis || data?.analysis || null);
       setResults(filterStrongResults(data));
     } catch (error) {
@@ -407,7 +398,7 @@ function DashboardPage() {
 
       const backendMessage =
         error.response?.data?.detail ||
-        "Image search failed. Check backend, database, AI service, and CORS.";
+        "Image search failed. Please check the backend and AI service.";
 
       setError(backendMessage);
     } finally {
@@ -759,14 +750,14 @@ function DashboardPage() {
                   disabled={saveLoading}
                   className="mt-5 w-full rounded-2xl border border-emerald-300/50 bg-emerald-500/80 px-6 py-3 font-black text-white shadow-lg shadow-emerald-300/40 ring-1 ring-white/30 backdrop-blur-xl transition hover:bg-emerald-600/90 disabled:bg-emerald-200/60"
                 >
-                  {saveLoading ? "Processing Product..." : "Analyze & Save"}
+                  {saveLoading ? "Analyzing Product..." : "Analyze & Save"}
                 </button>
               </div>
 
               <div>
                 {saveLoading && (
                   <div className="rounded-3xl border border-amber-200/70 bg-amber-100/45 p-5 text-sm font-bold text-amber-800 ring-1 ring-white/30 backdrop-blur-2xl">
-                    Creating an intelligent catalog entry...
+                    Analyzing the image and creating a searchable catalog entry...
                   </div>
                 )}
 
@@ -988,7 +979,7 @@ function DashboardPage() {
 
                 <input
                   type="text"
-                  placeholder="Example: pink floral top"
+                  placeholder="Example: brown shirt"
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                   className="mt-5 w-full rounded-2xl border border-pink-200/60 bg-white/25 px-4 py-3 text-slate-900 outline-none shadow-sm ring-1 ring-white/30 backdrop-blur-2xl transition placeholder:text-slate-500 focus:border-pink-300/80 focus:bg-white/35 focus:ring-4 focus:ring-pink-200/45"
@@ -999,7 +990,7 @@ function DashboardPage() {
                   disabled={searchLoading}
                   className="mt-4 w-full rounded-2xl border border-slate-700/30 bg-slate-950/90 px-6 py-3 font-black text-white shadow-lg shadow-slate-400/25 ring-1 ring-white/20 backdrop-blur-xl transition hover:bg-slate-800 disabled:bg-slate-400/60"
                 >
-                  {searchLoading ? "Searching..." : "Search Catalog"}
+                  {searchLoading ? "Searching Catalog..." : "Search Catalog"}
                 </button>
               </GlassCard>
 
@@ -1037,14 +1028,16 @@ function DashboardPage() {
                   disabled={searchLoading}
                   className="mt-4 w-full rounded-2xl border border-sky-300/50 bg-sky-500/85 px-6 py-3 font-black text-white shadow-lg shadow-sky-300/40 ring-1 ring-white/30 backdrop-blur-xl transition hover:bg-sky-600/90 disabled:bg-sky-200/60"
                 >
-                  {searchLoading ? "Processing..." : "Find Similar Products"}
+                  {searchLoading
+                    ? "Finding Matches..."
+                    : "Find Similar Products"}
                 </button>
               </GlassCard>
             </div>
 
             {searchLoading && (
               <div className="mb-8 rounded-3xl border border-amber-200/70 bg-amber-100/45 p-4 text-sm font-bold text-amber-800 ring-1 ring-white/30 backdrop-blur-2xl">
-                Searching for relevant product matches...
+                Searching your catalog for the most relevant products...
               </div>
             )}
 
@@ -1054,31 +1047,29 @@ function DashboardPage() {
             />
 
             <GlassCard>
-              <div className="mb-6 flex flex-col justify-between gap-4 md:flex-row md:items-end">
-                <div>
-                  <p className="text-xs font-black uppercase tracking-[0.28em] text-violet-500">
-                    Discovery Output
-                  </p>
+              <div className="mb-6">
+                <p className="text-xs font-black uppercase tracking-[0.28em] text-violet-500">
+                  Discovery Output
+                </p>
 
-                  <h2 className="mt-2 text-3xl font-black text-slate-950">
-                    Search Results
-                  </h2>
-                </div>
+                <h2 className="mt-2 text-3xl font-black text-slate-950">
+                  Search Results
+                </h2>
 
-                <span className="rounded-full border border-violet-200/70 bg-violet-100/45 px-4 py-2 text-sm font-bold text-violet-800 ring-1 ring-white/30 backdrop-blur-xl">
-                  Relevance threshold: {MIN_SCORE}
-                </span>
+                <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-700">
+                  Showing the most relevant products from your saved catalog.
+                </p>
               </div>
 
               {results.length === 0 ? (
                 <div className="rounded-[1.75rem] border border-dashed border-white/35 bg-white/20 p-8 text-center ring-1 ring-white/25 backdrop-blur-2xl">
                   <p className="text-sm font-black uppercase tracking-[0.28em] text-slate-400">
-                    No strong results
+                    No relevant products found
                   </p>
 
                   <p className="mt-3 text-sm leading-6 text-slate-600">
-                    Search by text or image after adding products.
-                    Low-confidence matches are hidden for cleaner results.
+                    Try a more specific query such as “brown shirt,” “denim
+                    shorts,” or add more products to your catalog.
                   </p>
                 </div>
               ) : (

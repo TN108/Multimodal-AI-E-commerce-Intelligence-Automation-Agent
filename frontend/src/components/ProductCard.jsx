@@ -1,7 +1,7 @@
-import RawJsonViewer from "./RawJsonViewer";
 import {
   getAnalysis,
   getColors,
+  getMatchLabel,
   getProductCategory,
   getProductDescription,
   getProductName,
@@ -15,6 +15,10 @@ function ProductCard({ product, onEdit, onDelete, showActions = false }) {
     <div className="group rounded-[1.75rem] border border-white/35 bg-white/20 p-5 shadow-[0_24px_80px_rgba(15,23,42,0.18)] ring-1 ring-white/30 backdrop-blur-3xl transition duration-300 hover:-translate-y-1 hover:border-white/50 hover:bg-white/30 hover:shadow-[0_35px_110px_rgba(15,23,42,0.22)]">
       <div className="mb-4 flex items-start justify-between gap-4">
         <div>
+          <p className="mb-2 inline-flex rounded-full border border-indigo-200/70 bg-indigo-100/45 px-3 py-1 text-xs font-black uppercase tracking-wide text-indigo-700 ring-1 ring-white/30 backdrop-blur-xl">
+            {getMatchLabel(product)}
+          </p>
+
           <h3 className="text-lg font-black leading-snug text-slate-950">
             {getProductName(product)}
           </h3>
@@ -72,8 +76,6 @@ function ProductCard({ product, onEdit, onDelete, showActions = false }) {
           </button>
         </div>
       )}
-
-      <RawJsonViewer title="View technical result" data={product} />
     </div>
   );
 }

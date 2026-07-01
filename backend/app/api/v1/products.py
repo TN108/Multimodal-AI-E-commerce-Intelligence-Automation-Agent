@@ -1,4 +1,5 @@
 import inspect
+import re
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
@@ -26,6 +27,11 @@ UNSUPPORTED_PRODUCT_MESSAGE = (
     "We do not currently support this type of product. "
     "Please upload a fashion-related product such as clothing, shoes, "
     "jewelry, bags, or accessories."
+)
+
+
+DUPLICATE_PRODUCT_MESSAGE = (
+    "This product already exists in your catalog. It was not saved again."
 )
 
 
@@ -57,6 +63,16 @@ SUPPORTED_SPECIFIC_PRODUCT_KEYWORDS = {
     "sunglasses",
     "accessory",
     "accessories",
+    "crossbody",
+    "shoulder bag",
+    "saddle bag",
+    "satchel",
+    "clutch",
+    "tote",
+    "tote bag",
+    "strap",
+    "buckle",
+    "leather",
 
     # Jewelry / jewellery
     "jewelry",
@@ -221,6 +237,69 @@ def safe_join(value) -> str:
     return str(value)
 
 
+def get_clean_analysis(analysis: dict) -> dict:
+    """
+    Supports both direct VLM responses and nested VLM responses.
+
+    Direct:
+    {
+        "product_type": "Handbag",
+        "category": "Accessories"
+    }
+
+    Nested:
+    {
+        "analysis": {
+            "product_type": "Handbag",
+            "category": "Accessories"
+        }
+    }
+    """
+    if not isinstance(analysis, dict):
+        return {}
+
+    nested_analysis = analysis.get("analysis")
+
+    if isinstance(nested_analysis, dict):
+        return nested_analysis
+
+    return analysis
+
+
+def keyword_exists(text: str, keyword: str) -> bool:
+    """
+    Checks keywords safely.
+
+    Single-word keywords match as full words only.
+    Example:
+    - "car" matches "car"
+    - "car" does not match "carrying"
+
+    Multi-word keywords match as phrases.
+    Example:
+    - "shoulder bag" matches "brown shoulder bag"
+    """
+    clean_text = str(text or "").lower()
+    clean_keyword = str(keyword or "").lower().strip()
+
+    if not clean_keyword:
+        return False
+
+    if " " in clean_keyword:
+        return clean_keyword in clean_text
+
+    pattern = rf"\b{re.escape(clean_keyword)}\b"
+
+    return re.search(pattern, clean_text) is not None
+
+
+def has_any_keyword(text: str, keywords: set[str]) -> bool:
+    """
+    Returns True if any keyword exists safely in the text.
+    """
+    return any(keyword_exists(text, keyword) for keyword in keywords)
+
+
 def validate_supported_product(analysis: dict):
     """
     Rejects unsupported uploads before saving to PostgreSQL or Qdrant.
@@ -240,14 +319,16 @@ def validate_supported_product(analysis: dict):
     - furniture
     - random objects
     """
-    if not isinstance(analysis, dict):
+    clean_analysis = get_clean_analysis(analysis)
+
+    if not clean_analysis:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=UNSUPPORTED_PRODUCT_MESSAGE,
         )
 
-    explicit_supported_flag = analysis.get("is_supported_product")
-    explicit_fashion_flag = analysis.get("is_fashion_product")
+    explicit_supported_flag = clean_analysis.get("is_supported_product")
+    explicit_fashion_flag = clean_analysis.get("is_fashion_product")
 
     if explicit_supported_flag is False or explicit_fashion_flag is False:
         raise HTTPException(
@@ -255,16 +336,16 @@ def validate_supported_product(analysis: dict):
             detail=UNSUPPORTED_PRODUCT_MESSAGE,
         )
 
-    product_type = safe_join(analysis.get("product_type", "")).lower()
-    category = safe_join(analysis.get("category", "")).lower()
-    gender = safe_join(analysis.get("gender", "")).lower()
-    style = safe_join(analysis.get("style", "")).lower()
-    material_guess = safe_join(analysis.get("material_guess", "")).lower()
-    colors = safe_join(analysis.get("colors", "")).lower()
-    visible_features = safe_join(analysis.get("visible_features", "")).lower()
-    search_tags = safe_join(analysis.get("search_tags", "")).lower()
-    short_description = safe_join(analysis.get("short_description", "")).lower()
-    description = safe_join(analysis.get("description", "")).lower()
+    product_type = safe_join(clean_analysis.get("product_type", "")).lower()
+    category = safe_join(clean_analysis.get("category", "")).lower()
+    gender = safe_join(clean_analysis.get("gender", "")).lower()
+    style = safe_join(clean_analysis.get("style", "")).lower()
+    material_guess = safe_join(clean_analysis.get("material_guess", "")).lower()
+    colors = safe_join(clean_analysis.get("colors", "")).lower()
+    visible_features = safe_join(clean_analysis.get("visible_features", "")).lower()
+    search_tags = safe_join(clean_analysis.get("search_tags", "")).lower()
+    short_description = safe_join(clean_analysis.get("short_description", "")).lower()
+    description = safe_join(clean_analysis.get("description", "")).lower()
 
     combined_text = " ".join(
         [
@@ -281,23 +362,97 @@ def validate_supported_product(analysis: dict):
         ]
     ).lower()
 
-    for blocked_word in UNSUPPORTED_PRODUCT_KEYWORDS:
-        if blocked_word in combined_text:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=UNSUPPORTED_PRODUCT_MESSAGE,
-            )
-
-    has_supported_product_keyword = any(
-        supported_word in combined_text
-        for supported_word in SUPPORTED_SPECIFIC_PRODUCT_KEYWORDS
+    has_supported_product_keyword = has_any_keyword(
+        combined_text,
+        SUPPORTED_SPECIFIC_PRODUCT_KEYWORDS,
     )
 
-    if not has_supported_product_keyword:
+    has_unsupported_product_keyword = has_any_keyword(
+        combined_text,
+        UNSUPPORTED_PRODUCT_KEYWORDS,
+    )
+
+    if has_unsupported_product_keyword and not has_supported_product_keyword:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=UNSUPPORTED_PRODUCT_MESSAGE,
         )
+
+    if has_supported_product_keyword:
+        return
+
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail=UNSUPPORTED_PRODUCT_MESSAGE,
+    )
+
+
+def normalize_duplicate_text(value: str) -> str:
+    """
+    Normalizes text so duplicate comparison is more stable.
+
+    Example:
+    "Brown   Saddle-Bag!!!"
+    becomes:
+    "brown saddle bag"
+    """
+    return re.sub(r"[^a-z0-9]+", " ", str(value or "").lower()).strip()
+
+
+def build_duplicate_signature(name: str, category: str, description: str) -> str:
+    """
+    Builds a simplified product signature for duplicate detection.
+    """
+    return normalize_duplicate_text(
+        f"{name} {category} {description}"
+    )
+
+
+def find_duplicate_product(
+    db: Session,
+    current_user: User,
+    product_name: str,
+    category: str,
+    description: str,
+):
+    """
+    Checks if the logged-in user already has a very similar product.
+
+    This prevents saving the same product multiple times for the same user.
+    """
+    new_signature = build_duplicate_signature(
+        product_name,
+        category,
+        description,
+    )
+
+    existing_products = (
+        db.query(Product)
+        .filter(Product.user_id == current_user.id)
+        .all()
+    )
+
+    for existing_product in existing_products:
+        existing_signature = build_duplicate_signature(
+            existing_product.name,
+            existing_product.category,
+            existing_product.description,
+        )
+
+        if existing_signature == new_signature:
+            return existing_product
+
+    return None
+
+
+def raise_duplicate_product_error():
+    """
+    Raises a consistent duplicate product error.
+    """
+    raise HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail=DUPLICATE_PRODUCT_MESSAGE,
+    )
 
 
 def normalize_qdrant_point_id(point_id):
@@ -396,8 +551,23 @@ def create_product(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    product_name = product.name.strip()
+    category = product.category or ""
+    description = product.description or ""
+
+    duplicate_product = find_duplicate_product(
+        db=db,
+        current_user=current_user,
+        product_name=product_name,
+        category=category,
+        description=description,
+    )
+
+    if duplicate_product:
+        raise_duplicate_product_error()
+
     new_product = Product(
-        name=product.name.strip(),
+        name=product_name,
         category=product.category,
         description=product.description,
         image_url=product.image_url,
@@ -468,18 +638,20 @@ async def analyze_and_save_product(
             detail=analysis,
         )
 
-    validate_supported_product(analysis)
+    analysis_data = get_clean_analysis(analysis)
 
-    product_type = str(analysis.get("product_type", "Unknown Product"))
-    category = str(analysis.get("category", "Uncategorized"))
-    gender = str(analysis.get("gender", ""))
-    style = str(analysis.get("style", ""))
-    material_guess = str(analysis.get("material_guess", ""))
-    short_description = str(analysis.get("short_description", ""))
+    validate_supported_product(analysis_data)
 
-    colors = analysis.get("colors", [])
-    visible_features = analysis.get("visible_features", [])
-    search_tags = analysis.get("search_tags", [])
+    product_type = str(analysis_data.get("product_type", "Unknown Product"))
+    category = str(analysis_data.get("category", "Uncategorized"))
+    gender = str(analysis_data.get("gender", ""))
+    style = str(analysis_data.get("style", ""))
+    material_guess = str(analysis_data.get("material_guess", ""))
+    short_description = str(analysis_data.get("short_description", ""))
+
+    colors = analysis_data.get("colors", [])
+    visible_features = analysis_data.get("visible_features", [])
+    search_tags = analysis_data.get("search_tags", [])
 
     color_text = safe_join(colors)
     feature_text = safe_join(visible_features)
@@ -512,6 +684,17 @@ async def analyze_and_save_product(
             description,
         ]
     ).strip()
+
+    duplicate_product = find_duplicate_product(
+        db=db,
+        current_user=current_user,
+        product_name=product_name,
+        category=category,
+        description=description,
+    )
+
+    if duplicate_product:
+        raise_duplicate_product_error()
 
     new_product = Product(
         name=product_name,
@@ -561,7 +744,7 @@ async def analyze_and_save_product(
         "message": "Product analyzed and saved successfully",
         "filename": file.filename,
         "content_type": file.content_type,
-        "vlm_analysis": analysis,
+        "vlm_analysis": analysis_data,
         "search_text": search_text,
         "saved_product": {
             "id": new_product.id,
